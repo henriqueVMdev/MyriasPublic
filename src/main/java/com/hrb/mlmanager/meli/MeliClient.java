@@ -71,12 +71,18 @@ public class MeliClient {
     // ---- Verbos --------------------------------------------------------------
 
     public MeliResponse request(HttpMethod method, String path, Long userId, Object body) {
+        return request(method, path, userId, body, null);
+    }
+
+    /** Variante com headers extras (ex.: Api-Version pras rotas de Mercado Ads). */
+    public MeliResponse request(HttpMethod method, String path, Long userId, Object body,
+                                Map<String, String> headers) {
         boolean didTokenRefresh = false;
         for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
             limiter.acquire();
             try {
                 String token = auth.ensureValidToken(userId);
-                MeliResponse resp = send(method, path, "Bearer " + token, body);
+                MeliResponse resp = send(method, path, "Bearer " + token, body, headers);
 
                 // 401 = token inválido/expirado. Rede de segurança: invalida o
                 // cache e força refresh numa única retentativa.
@@ -116,6 +122,10 @@ public class MeliClient {
 
     public MeliResponse get(String path, Map<String, String> params, Long userId) {
         return request(HttpMethod.GET, withQuery(path, params), userId, null);
+    }
+
+    public MeliResponse get(String path, Map<String, String> params, Map<String, String> headers, Long userId) {
+        return request(HttpMethod.GET, withQuery(path, params), userId, null, headers);
     }
 
     public MeliResponse put(String path, Long userId, Object body) {
@@ -173,6 +183,20 @@ public class MeliClient {
         for (CompletableFuture<List<JsonNode>> f : futures) { // ordem das batches preservada
             out.addAll(f.join());
         }
+        return out;
+    }
+
+    /**
+     * Aplica {@code fn} a cada item em paralelo (mesmo pool do multiGet), preservando
+     * a ordem. Substitui o {@code asyncio.gather} usado nos fan-outs de
+     * visitas/ads do serviço de performance; a vazão real segue limitada pelo
+     * rate limiter dentro de cada chamada.
+     */
+    public <T, R> List<R> parallelMap(List<T> items, java.util.function.Function<T, R> fn) {
+        List<CompletableFuture<R>> futures = new ArrayList<>();
+        for (T it : items) futures.add(CompletableFuture.supplyAsync(() -> fn.apply(it), pool));
+        List<R> out = new ArrayList<>(items.size());
+        for (CompletableFuture<R> f : futures) out.add(f.join());
         return out;
     }
 
@@ -261,8 +285,12 @@ public class MeliClient {
 
     // ---- Internos ------------------------------------------------------------
 
-    private MeliResponse send(HttpMethod method, String path, String authHeader, Object body) {
+    private MeliResponse send(HttpMethod method, String path, String authHeader, Object body,
+                              Map<String, String> headers) {
         RestClient.RequestBodySpec spec = http.method(method).uri(path).header("Authorization", authHeader);
+        if (headers != null) {
+            for (Map.Entry<String, String> h : headers.entrySet()) spec = spec.header(h.getKey(), h.getValue());
+        }
         if (body != null) {
             spec = spec.body(body);
         }
