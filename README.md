@@ -66,6 +66,10 @@ mvn test
 | `models/operation_log.py`                 | `ops/OperationLog` + `OperationLogRepository`   |
 | `contextvars` (ator da req.)              | `ops/CurrentActor` (`ThreadLocal`)              |
 | `Column(JSON)` (payload/response)         | `config/JsonNodeConverter`                      |
+| `services/meli_performance.py`            | `perf/MeliPerformanceService`                   |
+| `api/performance.py`                      | `perf/PerformanceController` (`/api/performance`)|
+| snapshots em disco (`scripts/.cache`)     | `perf/PerfSnapshot` (tabela `perf_snapshots`)   |
+| `asyncio.create_task` (refresh bg)        | `perf/PerfRefreshRunner` (`@Async`)             |
 
 O token de sessão usa o **mesmo esquema** do Python: `<userId>.<issued>.<hmacSHA256>`,
 assinado com `app.secret-key`.
@@ -92,7 +96,17 @@ upload de imagem e atributos de categoria. Cada edição grava um `OperationLog`
 Aqui o `MeliClient` ganhou `multiGetItems` (paralelo via `ExecutorService`, com o
 rate limiter como teto real), `scanAllItems` e `uploadPicture`.
 
+## Fatia 4 — Performance
+
+Análise dos anúncios sobre snapshots (inventário/vendas/ads/visitas). Divergência
+do Python: os snapshots, que eram arquivos JSON em disco, agora são linhas na
+tabela `perf_snapshots` (corpo JSON em coluna texto). Refresh pesado (scan O(N))
+roda em background via `@Async` (`PerfRefreshRunner`, com set anti-stack); visitas
+e ads são buscados sob demanda. Endpoints: `/snapshot-status`, `/refresh`,
+`/items`, `/duplicates`, `/items/{id}` (detalhe), `DELETE /items/{id}` (perm
+`delete_listing`), `/sku/{sku}`.
+
 ## Próximas fatias (ainda não portadas)
 
-performance, bulk, clone (Playwright), promoções, perguntas/mensagens,
-dashboard, logs de operação.
+bulk, clone (Playwright), promoções, perguntas/mensagens, dashboard,
+logs de operação.

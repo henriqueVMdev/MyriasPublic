@@ -644,7 +644,9 @@ public class MeliPerformanceService {
 
     // ---------- helpers ----------
 
-    private static List<String[]> dateWindows(LocalDate endDate, int lookbackDays, int maxSpan) {
+    // package-private: testável (janelas não podem se sobrepor, senão o custo de
+    // ads é contado em dobro).
+    static List<String[]> dateWindows(LocalDate endDate, int lookbackDays, int maxSpan) {
         List<String[]> windows = new ArrayList<>();
         LocalDate curEnd = endDate;
         int remaining = Math.max(1, lookbackDays);
