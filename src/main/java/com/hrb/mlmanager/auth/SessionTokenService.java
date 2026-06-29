@@ -7,7 +7,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.util.HexFormat;
+import java.util.HexFormat;
 
 /**
  * Sessão = token assinado (stateless), igual ao FastAPI: "&lt;userId&gt;.&lt;issued&gt;.&lt;hmac&gt;".
