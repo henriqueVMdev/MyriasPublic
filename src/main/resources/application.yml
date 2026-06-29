@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: ml-manager
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/hrb_ml_manager}
+    username: ${DB_USER:hrb}
+    password: ${DB_PASSWORD:hrb_secret}
+  jpa:
+    hibernate:
+      ddl-auto: update          # cria/atualiza as tabelas a partir das entidades
+    open-in-view: false
+
+app:
+  secret-key: ${APP_SECRET_KEY:dev-insecure-change-me}   # assina os tokens de sessão
+  frontend-url: ${FRONTEND_URL:http://localhost:5173}
+
+meli:                                                    # OAuth + cliente Mercado Livre (Fatia 2)
+  app-id: ${MELI_APP_ID:}
+  secret-key: ${MELI_SECRET_KEY:}
+  redirect-uri: ${MELI_REDIRECT_URI:http://localhost:5173/api/auth/callback}
+  max-requests-per-minute: ${MELI_MAX_RPM:1500}
+  max-concurrent-requests: ${MELI_MAX_CONCURRENT:10}
+
+server:
+  port: 8000

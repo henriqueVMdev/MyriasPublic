@@ -1,0 +1,14 @@
+# Profile dev: banco em memória, roda sem Postgres. Use com:
+#   mvn spring-boot:run -Dspring-boot.run.profiles=dev
+spring:
+  datasource:
+    url: jdbc:h2:mem:mlmanager;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+  h2:
+    console:
+      enabled: true   # http://localhost:8000/h2-console

@@ -1,0 +1,15 @@
+# backend (Maven)
+target/
+*.class
+*.iml
+
+# frontend (Vue/Vite)
+frontend/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+
+.idea/
+.vscode/
+.env
+*.log
+.DS_Store

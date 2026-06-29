@@ -1,0 +1,602 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================================================
+   Tipografia & base global
+   --------------------------------------------------------------------------
+   Archivo em todo o app (display + texto). Números tabulares por padrão —
+   é um painel de dados, colunas de números precisam alinhar.
+   ========================================================================== */
+@layer base {
+  html {
+    font-family: "Archivo", system-ui, -apple-system, sans-serif;
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  h1, h2, h3, h4 {
+    letter-spacing: -0.02em;
+    font-weight: 700;
+  }
+  body {
+    accent-color: #ffd600;
+  }
+  ::selection {
+    background: rgba(255, 214, 0, 0.55);
+    color: #111111;
+  }
+  .dark ::selection {
+    background: rgba(255, 214, 0, 0.85);
+    color: #111111;
+  }
+  /* Foco visível por teclado — anel amarelo da marca em tudo */
+  :focus-visible {
+    outline: 2px solid rgba(255, 214, 0, 0.9);
+    outline-offset: 1px;
+  }
+  .dark :focus-visible {
+    outline-color: rgba(255, 214, 0, 0.7);
+  }
+}
+
+/* Scrollbar discreta também no tema claro */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d5d3c8;
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: #a7a599;
+}
+
+/* ==========================================================================
+   Checkboxes estilizados com a paleta da marca (preto + amarelo).
+   ========================================================================== */
+@layer base {
+  input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 1.125rem;
+    height: 1.125rem;
+    border-radius: 0.375rem;
+    border: 1.5px solid #d1d5db;
+    background-color: #ffffff;
+    cursor: pointer;
+    flex-shrink: 0;
+    position: relative;
+    transition: all 150ms ease;
+    vertical-align: middle;
+  }
+  .dark input[type="checkbox"] {
+    background-color: #1a1a1a;
+    border-color: #3f3f46;
+  }
+  input[type="checkbox"]:hover:not(:disabled) {
+    border-color: #111111;
+  }
+  .dark input[type="checkbox"]:hover:not(:disabled) {
+    border-color: #ffd600;
+  }
+  input[type="checkbox"]:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(255, 214, 0, 0.35);
+  }
+  input[type="checkbox"]:checked {
+    background-color: #ffd600;
+    border-color: #e6c000;
+  }
+  .dark input[type="checkbox"]:checked {
+    background-color: #ffd600;
+    border-color: #ffd600;
+  }
+  input[type="checkbox"]:checked::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 46%;
+    width: 5px;
+    height: 9px;
+    border: solid #111111;
+    border-width: 0 2px 2px 0;
+    transform: translate(-50%, -50%) rotate(45deg);
+  }
+  input[type="checkbox"]:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  input[type="checkbox"]:indeterminate {
+    background-color: #ffd600;
+    border-color: #e6c000;
+  }
+  input[type="checkbox"]:indeterminate::after {
+    content: "";
+    position: absolute;
+    left: 3px;
+    top: 7px;
+    width: 10px;
+    height: 2px;
+    background: #111111;
+    border-radius: 1px;
+  }
+}
+
+/* ==========================================================================
+   Inputs: remove as setas nativas do <input type="number">
+   (clutter visual, atrapalha alinhamento ao lado de selects)
+   ========================================================================== */
+@layer base {
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+}
+
+/* ==========================================================================
+   Selects estilizados: chevron customizado em vez da seta nativa do SO
+   (a nativa é feia e varia entre Chrome/Firefox/Edge).
+   ========================================================================== */
+@layer base {
+  select {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.6' d='m6 8 4 4 4-4'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 0.5rem center;
+    background-size: 1.1em 1.1em;
+    padding-right: 2rem;
+  }
+  /* Esconde o chevron padrão do IE/legacy */
+  select::-ms-expand { display: none; }
+  .dark select {
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23a1a1aa' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.6' d='m6 8 4 4 4-4'/%3e%3c/svg%3e");
+  }
+}
+
+/* ==========================================================================
+   DARK MODE — retrofit global
+   --------------------------------------------------------------------------
+   Estratégia: cada regra usa o seletor `.dark .X` (specificity 0,2,0) pra
+   bater as utilities Tailwind (0,1,0) sem editar cada arquivo.
+   Paleta: superfícies em preto estratificado, acento amarelo da marca.
+     base       #0a0a0a  (página)
+     surface    #18181b  (cards)
+     subtle     #0f0f0f  (gray-50)
+     elevated   #27272a  (gray-100 / hover)
+     stronger   #3f3f46  (gray-200 / borders fortes)
+     border     #27272a
+     text-1     #f4f4f5  (gray-900 → quase branco)
+     text-2     #d4d4d8  (gray-700)
+     text-3     #a1a1aa  (gray-500/600 → cinza médio)
+     text-mute  #71717a  (gray-400)
+     accent     #ffd600  (brand-yellow)
+   ========================================================================== */
+
+/* Base da página */
+html.dark,
+.dark body {
+  background-color: #0a0a0a;
+  color: #e4e4e7;
+  color-scheme: dark;
+}
+
+/* ---------- Superfícies ---------- */
+.dark .bg-white {
+  background-color: #18181b;
+}
+.dark .bg-gray-50 {
+  background-color: #0f0f0f;
+}
+.dark .bg-gray-100 {
+  background-color: #27272a;
+}
+.dark .bg-gray-200 {
+  background-color: #3f3f46;
+}
+.dark .bg-gray-300 {
+  background-color: #52525b;
+}
+.dark .bg-gray-900 {
+  background-color: #f4f4f5;
+  color: #18181b;
+}
+
+/* Translúcidos comuns */
+.dark .bg-white\/40 {
+  background-color: rgba(24, 24, 27, 0.6);
+}
+.dark .bg-white\/60 {
+  background-color: rgba(24, 24, 27, 0.7);
+}
+.dark .bg-black\/30 {
+  background-color: rgba(0, 0, 0, 0.6);
+}
+.dark .bg-black\/40 {
+  background-color: rgba(0, 0, 0, 0.7);
+}
+
+/* ---------- Bordas ---------- */
+.dark *,
+.dark ::before,
+.dark ::after {
+  border-color: #27272a;
+}
+.dark .border-gray-100,
+.dark .border-gray-200,
+.dark .border-gray-300 {
+  border-color: #27272a;
+}
+.dark .border-zinc-700 {
+  border-color: #3f3f46;
+}
+.dark .border-zinc-800 {
+  border-color: #27272a;
+}
+.dark .divide-y > :not([hidden]) ~ :not([hidden]) {
+  border-color: #27272a;
+}
+
+/* ---------- Texto ---------- */
+.dark .text-gray-900,
+.dark .text-black {
+  color: #f4f4f5;
+}
+.dark .text-gray-800 {
+  color: #e4e4e7;
+}
+.dark .text-gray-700 {
+  color: #d4d4d8;
+}
+.dark .text-gray-600 {
+  color: #a1a1aa;
+}
+.dark .text-gray-500 {
+  color: #a1a1aa;
+}
+.dark .text-gray-400 {
+  color: #71717a;
+}
+.dark .text-gray-300 {
+  color: #52525b;
+}
+
+/* Texto colorido — clareia pra contrastar com fundo escuro */
+.dark .text-red-700,
+.dark .text-red-600 {
+  color: #fca5a5;
+}
+.dark .text-red-500,
+.dark .text-red-400 {
+  color: #f87171;
+}
+.dark .text-green-700,
+.dark .text-green-600 {
+  color: #86efac;
+}
+.dark .text-green-500 {
+  color: #4ade80;
+}
+.dark .text-yellow-700,
+.dark .text-yellow-600 {
+  color: #fde047;
+}
+.dark .text-amber-600,
+.dark .text-amber-700,
+.dark .text-amber-800 {
+  color: #fcd34d;
+}
+.dark .text-blue-700,
+.dark .text-blue-600 {
+  color: #93c5fd;
+}
+.dark .text-purple-700 {
+  color: #d8b4fe;
+}
+
+/* ---------- Marca: meli-blue (preto na light) → amarelo na dark ---------- */
+.dark .bg-meli-blue {
+  background-color: #ffd600;
+  color: #111111;
+}
+.dark .bg-meli-blue-dark {
+  background-color: #e6c000;
+  color: #111111;
+}
+.dark .hover\:bg-meli-blue:hover {
+  background-color: #ffd600;
+  color: #111111;
+}
+.dark .hover\:bg-meli-blue-dark:hover {
+  background-color: #e6c000;
+  color: #111111;
+}
+.dark .text-meli-blue {
+  color: #ffd600;
+}
+.dark .border-meli-blue {
+  border-color: #ffd600;
+}
+.dark .ring-meli-blue {
+  --tw-ring-color: #ffd600;
+}
+.dark .focus\:ring-meli-blue:focus {
+  --tw-ring-color: rgba(255, 214, 0, 0.5);
+}
+
+/* Brand explicit — mantém amarelo, só ajusta texto */
+.dark .bg-brand-yellow,
+.dark .bg-brand-yellow-dark {
+  color: #111111;
+}
+.dark .bg-brand-yellow-light {
+  background-color: rgba(255, 214, 0, 0.15);
+  color: #ffd600;
+}
+.dark .hover\:bg-brand-yellow-light:hover {
+  background-color: rgba(255, 214, 0, 0.15);
+  color: #ffd600;
+}
+
+/* Chips de ícone com bg-brand-yellow-soft: no escuro vira amarelo translúcido
+   com ícone amarelo (senão fica creme quase-branco com ícone invisível). */
+.dark .bg-brand-yellow-soft {
+  background-color: rgba(255, 214, 0, 0.14);
+}
+.dark .bg-brand-yellow-soft.text-gray-900 {
+  color: #ffd600;
+}
+
+/* Cabeçalho de tabela com bg-gray-50/80: a variante com opacidade não tinha
+   override no escuro e renderizava clara. Força superfície escura sutil. */
+.dark .bg-gray-50\/80 {
+  background-color: rgba(39, 39, 42, 0.5);
+}
+
+/* ---------- Banners de status (50/100) — tints translúcidos ---------- */
+.dark .bg-blue-50 {
+  background-color: rgba(59, 130, 246, 0.12);
+}
+.dark .bg-blue-100 {
+  background-color: rgba(59, 130, 246, 0.20);
+}
+.dark .bg-green-50 {
+  background-color: rgba(34, 197, 94, 0.12);
+}
+.dark .bg-green-100 {
+  background-color: rgba(34, 197, 94, 0.20);
+}
+.dark .bg-red-50 {
+  background-color: rgba(239, 68, 68, 0.12);
+}
+.dark .bg-red-100 {
+  background-color: rgba(239, 68, 68, 0.20);
+}
+.dark .hover\:bg-red-50:hover {
+  background-color: rgba(239, 68, 68, 0.18);
+}
+.dark .bg-red-900\/40 {
+  background-color: rgba(127, 29, 29, 0.35);
+}
+.dark .hover\:bg-red-900\/40:hover {
+  background-color: rgba(127, 29, 29, 0.45);
+}
+.dark .bg-yellow-50 {
+  background-color: rgba(255, 214, 0, 0.10);
+}
+.dark .bg-yellow-100 {
+  background-color: rgba(255, 214, 0, 0.18);
+}
+.dark .bg-amber-50 {
+  background-color: rgba(245, 158, 11, 0.12);
+}
+.dark .bg-amber-100 {
+  background-color: rgba(245, 158, 11, 0.20);
+}
+.dark .bg-amber-200 {
+  background-color: rgba(245, 158, 11, 0.30);
+}
+.dark .bg-purple-100 {
+  background-color: rgba(168, 85, 247, 0.20);
+}
+
+/* Bordas de banner — translúcidas */
+.dark .border-green-200 {
+  border-color: rgba(34, 197, 94, 0.35);
+}
+.dark .border-red-200 {
+  border-color: rgba(239, 68, 68, 0.35);
+}
+.dark .border-yellow-200 {
+  border-color: rgba(255, 214, 0, 0.35);
+}
+.dark .border-amber-200 {
+  border-color: rgba(245, 158, 11, 0.35);
+}
+.dark .border-blue-200 {
+  border-color: rgba(59, 130, 246, 0.35);
+}
+.dark .border-brand-yellow-dark {
+  border-color: rgba(255, 214, 0, 0.30);
+}
+
+/* ---------- Hover de cinzas em superfícies brancas ---------- */
+.dark .hover\:bg-gray-50:hover {
+  background-color: #27272a;
+}
+.dark .hover\:bg-gray-100:hover {
+  background-color: #3f3f46;
+}
+.dark .hover\:bg-gray-200:hover {
+  background-color: #52525b;
+}
+.dark .hover\:bg-blue-50:hover {
+  background-color: rgba(255, 214, 0, 0.10);
+}
+
+/* ---------- Inputs / textareas / selects ---------- */
+.dark input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]),
+.dark textarea,
+.dark select {
+  background-color: #0f0f0f;
+  color: #f4f4f5;
+  border-color: #3f3f46;
+}
+.dark input:disabled,
+.dark textarea:disabled,
+.dark select:disabled {
+  background-color: #18181b;
+  color: #71717a;
+}
+.dark ::placeholder {
+  color: #71717a;
+}
+
+/* Inputs já com bg explícito de dark da própria UI — preserva */
+.dark .bg-zinc-800,
+.dark .bg-zinc-900 {
+  background-color: #18181b;
+}
+
+/* ---------- Sombras suaves no escuro ---------- */
+.dark .shadow-sm {
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.45);
+}
+.dark .shadow {
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.55), 0 1px 2px -1px rgba(0, 0, 0, 0.55);
+}
+.dark .shadow-lg {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.6), 0 4px 6px -4px rgba(0, 0, 0, 0.6);
+}
+
+/* ---------- Scrollbar ---------- */
+.dark ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.dark ::-webkit-scrollbar-track {
+  background: #0a0a0a;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 4px;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}
+
+/* ---------- Selo "ativa" / pills coloridos com bg-X-100 + text-X-700 ---------- */
+.dark .bg-blue-100.text-blue-600,
+.dark .bg-blue-100.text-blue-700 {
+  background-color: rgba(59, 130, 246, 0.20);
+  color: #93c5fd;
+}
+.dark .bg-purple-100.text-purple-700 {
+  background-color: rgba(168, 85, 247, 0.20);
+  color: #d8b4fe;
+}
+.dark .bg-amber-100.text-amber-600,
+.dark .bg-amber-100.text-amber-800 {
+  background-color: rgba(245, 158, 11, 0.20);
+  color: #fcd34d;
+}
+.dark .bg-green-100.text-green-700 {
+  background-color: rgba(34, 197, 94, 0.20);
+  color: #86efac;
+}
+
+/* ---------- Modo escuro: garante contraste em badges sólidos ---------- */
+.dark .bg-red-500,
+.dark .bg-red-600 {
+  color: #ffffff;
+}
+
+/* Botão verde de ação (publicar) — mantém verde mas levemente menos saturado */
+.dark .bg-green-600 {
+  background-color: #16a34a;
+}
+.dark .hover\:bg-green-700:hover {
+  background-color: #15803d;
+}
+
+/* ==========================================================================
+   Identidade visual — faixa de sinalização (hazard stripe)
+   --------------------------------------------------------------------------
+   Motivo da marca: amarelo + preto de autopeças/corrida. Usado com
+   parcimônia: topo da sidebar, login, detalhes de cabeçalho.
+   ========================================================================== */
+.hazard-stripe {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    #111111 0 10px,
+    #ffd600 10px 20px
+  );
+}
+.hazard-stripe-subtle {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(17, 17, 17, 0.9) 0 10px,
+    transparent 10px 20px
+  );
+}
+
+/* ==========================================================================
+   Movimento — transição entre rotas + revelação escalonada de cards
+   ========================================================================== */
+.page-enter-active {
+  transition: opacity 0.22s ease, transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.page-leave-active {
+  transition: opacity 0.12s ease;
+}
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.page-leave-to {
+  opacity: 0;
+}
+
+/* Filhos diretos entram em cascata: aplicar .stagger-children no grid */
+.stagger-children > * {
+  animation: fade-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.stagger-children > *:nth-child(1) { animation-delay: 0.03s; }
+.stagger-children > *:nth-child(2) { animation-delay: 0.08s; }
+.stagger-children > *:nth-child(3) { animation-delay: 0.13s; }
+.stagger-children > *:nth-child(4) { animation-delay: 0.18s; }
+.stagger-children > *:nth-child(5) { animation-delay: 0.23s; }
+.stagger-children > *:nth-child(6) { animation-delay: 0.28s; }
+
+@keyframes fade-up {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter-active,
+  .page-leave-active,
+  .stagger-children > * {
+    transition: none;
+    animation: none;
+  }
+}
