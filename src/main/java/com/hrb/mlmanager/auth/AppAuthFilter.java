@@ -1,6 +1,7 @@
 package com.hrb.mlmanager.auth;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hrb.mlmanager.ops.CurrentActor;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -44,29 +45,33 @@ public class AppAuthFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
         String path = request.getRequestURI();
+        try {
+            // Rotas abertas e tudo fora de /api/ passam direto.
+            if (OPEN_PATHS.contains(path) || !path.startsWith("/api/")) {
+                chain.doFilter(request, response);
+                return;
+            }
 
-        // Rotas abertas e tudo fora de /api/ passam direto.
-        if (OPEN_PATHS.contains(path) || !path.startsWith("/api/")) {
-            chain.doFilter(request, response);
-            return;
+            Long userId = tokens.verify(readCookie(request)).orElse(null);
+            if (userId != null) {
+                request.setAttribute(USER_ID_ATTR, userId);
+                chain.doFilter(request, response);
+                return;
+            }
+
+            // Sem sessão válida: libera só enquanto não existe nenhum usuário (bootstrap).
+            if (users.count() == 0) {
+                chain.doFilter(request, response);
+                return;
+            }
+
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType("application/json");
+            mapper.writeValue(response.getWriter(), Map.of("detail", "Não autenticado"));
+        } finally {
+            // Thread vai voltar pro pool — não deixar o ator vazar pro próximo request.
+            CurrentActor.clear();
         }
-
-        Long userId = tokens.verify(readCookie(request)).orElse(null);
-        if (userId != null) {
-            request.setAttribute(USER_ID_ATTR, userId);
-            chain.doFilter(request, response);
-            return;
-        }
-
-        // Sem sessão válida: libera só enquanto não existe nenhum usuário (bootstrap).
-        if (users.count() == 0) {
-            chain.doFilter(request, response);
-            return;
-        }
-
-        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-        response.setContentType("application/json");
-        mapper.writeValue(response.getWriter(), Map.of("detail", "Não autenticado"));
     }
 
     private String readCookie(HttpServletRequest request) {

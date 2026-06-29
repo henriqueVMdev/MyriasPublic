@@ -18,9 +18,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
@@ -262,6 +264,15 @@ public class MeliAuthService {
         out.put("expires_at", token.getExpiresAt().toString());
         out.put("expires_in_seconds", Math.max(0, ChronoUnit.SECONDS.between(now, token.getExpiresAt())));
         return out;
+    }
+
+    /** user_id da conta ML ativa, ou 401. Espelho de get_current_user_id. */
+    @Transactional(readOnly = true)
+    public Long requireActiveAccountId() {
+        return getToken(null)
+                .map(MeliToken::getUserId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.UNAUTHORIZED, "Não autenticado. Faça login via OAuth."));
     }
 
     @Transactional(readOnly = true)

@@ -1,5 +1,6 @@
 package com.hrb.mlmanager.auth;
 
+import com.hrb.mlmanager.ops.CurrentActor;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -30,6 +31,10 @@ public class PanelSecurity {
         if (user == null || !user.isActive()) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Sessão inválida.");
         }
+        // Registra quem é o ator da requisição para os OperationLogs (mirror do
+        // set_current_actor do dependencies.py).
+        CurrentActor.set(user.getDisplayName() != null && !user.getDisplayName().isBlank()
+                ? user.getDisplayName() : user.getUsername());
         return user;
     }
 

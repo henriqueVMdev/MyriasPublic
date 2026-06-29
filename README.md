@@ -60,6 +60,12 @@ mvn test
 | `api/auth.py` (rotas OAuth)               | `meli/MeliAuthController` (`/api/auth`)         |
 | `api/webhooks.py`                         | `meli/WebhookController`                        |
 | `require_permission(...)`                 | `auth/PanelSecurity`                            |
+| `services/meli_items.py`                  | `meli/MeliItemsService`                         |
+| `api/items.py`                            | `meli/ItemsController` (`/api/items`)           |
+| `schemas/items.py`                        | `meli/ItemUpdate` + records no controller       |
+| `models/operation_log.py`                 | `ops/OperationLog` + `OperationLogRepository`   |
+| `contextvars` (ator da req.)              | `ops/CurrentActor` (`ThreadLocal`)              |
+| `Column(JSON)` (payload/response)         | `config/JsonNodeConverter`                      |
 
 O token de sessão usa o **mesmo esquema** do Python: `<userId>.<issued>.<hmacSHA256>`,
 assinado com `app.secret-key`.
@@ -77,11 +83,16 @@ refresh proativo de token e o `MeliClient` com retry/backoff/rate-limit que as
 próximas fatias usam para falar com a API do ML. Configurar via env:
 `MELI_APP_ID`, `MELI_SECRET_KEY`, `MELI_REDIRECT_URI`.
 
-Ainda não portado do `MeliClient`: `multi_get_items`, `scan_all_items` e
-`upload_picture` — entram com a fatia de items (onde o paralelismo do
-`asyncio.gather` vira `ExecutorService`).
+## Fatia 3 — Items (anúncios)
+
+Listagem com filtros (incl. status especial `pending`, varrido client-side),
+detalhe do item (+descrição/variações), edição (título/preço/atributos/status/
+descrição/fotos) com verificação de atributos silenciosamente rejeitados pelo ML,
+upload de imagem e atributos de categoria. Cada edição grava um `OperationLog`.
+Aqui o `MeliClient` ganhou `multiGetItems` (paralelo via `ExecutorService`, com o
+rate limiter como teto real), `scanAllItems` e `uploadPicture`.
 
 ## Próximas fatias (ainda não portadas)
 
-items/performance, bulk, clone (Playwright), promoções, perguntas/mensagens,
+performance, bulk, clone (Playwright), promoções, perguntas/mensagens,
 dashboard, logs de operação.

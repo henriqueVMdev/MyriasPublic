@@ -15,7 +15,7 @@
     <artifactId>ml-manager</artifactId>
     <version>0.1.0</version>
     <name>HRB ML Manager (Java)</name>
-    <description>Backend Java do ML Manager — reescrita do FastAPI. Fatias: 1 auth do painel, 2 OAuth + cliente Mercado Livre.</description>
+    <description>Backend Java do ML Manager — reescrita do FastAPI. Fatias: 1 auth do painel, 2 OAuth + cliente Mercado Livre, 3 items.</description>
 
     <properties>
         <java.version>21</java.version>
