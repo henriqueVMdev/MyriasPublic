@@ -26,8 +26,31 @@ public class UserAccountService {
         return repo.findByActiveTrueOrderByUsername();
     }
 
+    /** Todos os usuários (CRUD de admin), ordenados por username. */
+    public List<AppUser> listAll() {
+        return repo.findAllByOrderByUsername();
+    }
+
     public AppUser getById(Long id) {
         return repo.findById(id).orElse(null);
+    }
+
+    public AppUser getByUsername(String username) {
+        return repo.findByUsername(username == null ? "" : username.strip()).orElse(null);
+    }
+
+    /** Hash bcrypt de uma senha — usado ao trocar a senha num update. */
+    public String hashPassword(String plain) {
+        return encoder.encode(plain);
+    }
+
+    /** Persiste alterações de um usuário gerenciado/destacado (merge). */
+    public AppUser save(AppUser user) {
+        return repo.save(user);
+    }
+
+    public void delete(AppUser user) {
+        repo.delete(user);
     }
 
     public AppUser create(String username, String password, String displayName,

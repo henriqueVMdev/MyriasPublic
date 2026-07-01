@@ -73,4 +73,14 @@ public class AppUser {
     public boolean isAdmin() { return admin; }
     public boolean isActive() { return active; }
     public List<String> getPermissions() { return permissions == null ? List.of() : permissions; }
+
+    // Setters usados pelo CRUD de admin (UserController.update). O updated_at é
+    // recarimbado pelo @UpdateTimestamp ao salvar.
+    public void setDisplayName(String displayName) { this.displayName = displayName; }
+    public void setHashedPassword(String hashedPassword) { this.hashedPassword = hashedPassword; }
+    public void setAdmin(boolean admin) { this.admin = admin; }
+    public void setActive(boolean active) { this.active = active; }
+    public void setPermissions(List<String> permissions) {
+        this.permissions = permissions == null ? List.of() : permissions;
+    }
 }

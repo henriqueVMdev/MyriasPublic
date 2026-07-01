@@ -13,4 +13,7 @@ public interface UserRepository extends JpaRepository<AppUser, Long> {
     Optional<AppUser> findByUsername(String username);
 
     List<AppUser> findByActiveTrueOrderByUsername();
+
+    /** Todos os usuários ordenados por username — lista do CRUD de admin. */
+    List<AppUser> findAllByOrderByUsername();
 }

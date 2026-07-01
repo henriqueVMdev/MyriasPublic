@@ -46,4 +46,13 @@ public class PanelSecurity {
         }
         throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Sem permissão para esta ação.");
     }
+
+    /** Exige usuário admin, senão 403 (espelho de require_admin do dependencies.py). */
+    public AppUser requireAdmin(HttpServletRequest request) {
+        AppUser user = currentUser(request);
+        if (!user.isAdmin()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Acesso restrito a administradores.");
+        }
+        return user;
+    }
 }
