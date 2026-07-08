@@ -14,5 +14,5 @@ frontend/tsconfig.tsbuildinfo
 .env
 *.log
 .DS_Store
-
-.md
+docs/superpowers/plans/
+docs/superpowers/specs/
