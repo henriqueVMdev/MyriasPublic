@@ -16,3 +16,4 @@ frontend/tsconfig.tsbuildinfo
 .DS_Store
 docs/superpowers/plans/
 docs/superpowers/specs/
+.claude
