@@ -106,7 +106,21 @@ e ads são buscados sob demanda. Endpoints: `/snapshot-status`, `/refresh`,
 `/items`, `/duplicates`, `/items/{id}` (detalhe), `DELETE /items/{id}` (perm
 `delete_listing`), `/sku/{sku}`.
 
+## Fatia 5 — Bulk (parcial)
+
+Portadas as rotas base de edição em massa que o frontend usa para SKU e updates:
+`/api/bulk/skus`, `/skus/all`, `/sku/{sku}`, `/sku/{sku}/all`, `/update`,
+`/update-by-sku`, `/update-multi`, leitura/atualização multi-conta de descrição,
+debug de pacote e leitura de atributos de posição da categoria.
+
+Também foi mantido o comportamento importante do Python para update em massa:
+`keep_cover_photo`, retry removendo campos `field_not_updatable`, warnings de campos
+pulados, `OperationLog` com `batch_id` e enriquecimento de grupos com nickname/título.
+
+Ainda falta portar a subfatia específica de autopeças: copiar/aplicar compatibilidades
+de veículos e atualizar posições via `user-products/{id}/compatibilities`.
+
 ## Próximas fatias (ainda não portadas)
 
-bulk, clone (Playwright), promoções, perguntas/mensagens, dashboard,
-logs de operação.
+bulk compatibilidades/posições, clone (Playwright), promoções,
+perguntas/mensagens, dashboard.

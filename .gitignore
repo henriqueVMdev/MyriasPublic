@@ -1,5 +1,6 @@
 # backend (Maven)
 target/
+.tools/
 *.class
 *.iml
 
