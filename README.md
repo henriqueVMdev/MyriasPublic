@@ -106,21 +106,31 @@ e ads são buscados sob demanda. Endpoints: `/snapshot-status`, `/refresh`,
 `/items`, `/duplicates`, `/items/{id}` (detalhe), `DELETE /items/{id}` (perm
 `delete_listing`), `/sku/{sku}`.
 
-## Fatia 5 — Bulk (parcial)
+## Fatia 5 — Bulk
 
-Portadas as rotas base de edição em massa que o frontend usa para SKU e updates:
+Portadas as rotas de edição em massa que o frontend usa para SKU e updates:
 `/api/bulk/skus`, `/skus/all`, `/sku/{sku}`, `/sku/{sku}/all`, `/update`,
 `/update-by-sku`, `/update-multi`, leitura/atualização multi-conta de descrição,
-debug de pacote e leitura de atributos de posição da categoria.
+debug de pacote, leitura de atributos de posição da categoria, leitura/cópia de
+compatibilidades e atualização de posições via `user-products/{id}/compatibilities`.
 
 Também foi mantido o comportamento importante do Python para update em massa:
 `keep_cover_photo`, retry removendo campos `field_not_updatable`, warnings de campos
 pulados, `OperationLog` com `batch_id` e enriquecimento de grupos com nickname/título.
 
-Ainda falta portar a subfatia específica de autopeças: copiar/aplicar compatibilidades
-de veículos e atualizar posições via `user-products/{id}/compatibilities`.
+## Fatia 6 — Operacional do frontend
+
+Portadas as rotas que faltavam para as telas do Vue: logs de scripts
+(`/api/script-logs`), perguntas (`/api/questions`), mensagens pós-venda
+(`/api/messages`), promoções/cupons (`/api/promotions`) e clone de anúncios
+(`/api/clone`).
+
+O clone Java cobre preview por item/MLBU quando a API do ML permite, criação em
+uma ou múltiplas contas, SKU, descrição, atributos obrigatórios, medidas de
+embalagem, compatibilidades, posições e `OperationLog`. Diferença conhecida do
+backend Python: o fallback com Playwright/browser para anúncios de concorrentes
+bloqueados por antibot não foi portado para Java.
 
 ## Próximas fatias (ainda não portadas)
 
-bulk compatibilidades/posições, clone (Playwright), promoções,
-perguntas/mensagens, dashboard.
+Dashboard consolidado e eventuais automações auxiliares/scripts fora do fluxo HTTP.

@@ -1,0 +1,171 @@
+package com.hrb.mlmanager.ai;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.hrb.mlmanager.auth.AppUser;
+import com.hrb.mlmanager.meli.MeliAuthService;
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+class AiAssistantServiceTest {
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    private OpenRouterClient openRouter;
+    private AiToolRegistry tools;
+    private PendingActionStore pendingActions;
+    private MeliAuthService meliAuth;
+    private AiAssistantService service;
+    private AppUser user;
+
+    @BeforeEach
+    void setUp() {
+        openRouter = mock(OpenRouterClient.class);
+        tools = mock(AiToolRegistry.class);
+        pendingActions = new PendingActionStore(Duration.ofMinutes(10));
+        meliAuth = mock(MeliAuthService.class);
+        service = new AiAssistantService(openRouter, tools, pendingActions, meliAuth);
+
+        user = mock(AppUser.class);
+        when(user.getId()).thenReturn(1L);
+        when(meliAuth.listAccounts()).thenReturn(List.of());
+        when(openRouter.resolveModel(any())).thenReturn("m");
+        // Tools oferecidas ao usuário — o loop só despacha nomes desta lista.
+        when(tools.toolDefinitions(user)).thenReturn((ArrayNode) json("""
+            [{"type":"function","function":{"name":"list_accounts"}},
+             {"type":"function","function":{"name":"bulk_update_items"}}]
+            """));
+    }
+
+    private static JsonNode json(String s) {
+        try { return MAPPER.readTree(s); } catch (Exception e) { throw new RuntimeException(e); }
+    }
+
+    private static final JsonNode FINAL_RESP = json(
+            "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"resposta final\"}}]}");
+
+    private static final JsonNode READ_TOOL_RESP = json("""
+        {"choices":[{"message":{"role":"assistant","content":null,
+          "tool_calls":[{"id":"c1","type":"function","function":{"name":"list_accounts","arguments":"{}"}}]}}]}
+        """);
+
+    private static final JsonNode WRITE_TOOL_RESP = json("""
+        {"choices":[{"message":{"role":"assistant","content":"Vou pausar o anúncio.",
+          "tool_calls":[{"id":"c2","type":"function","function":{"name":"bulk_update_items",
+            "arguments":"{\\"groups\\":[{\\"user_id\\":1,\\"item_ids\\":[\\"MLB1\\"]}],\\"updates\\":{\\"status\\":\\"paused\\"}}"}}]}}]}
+        """);
+
+    private JsonNode userMessages() {
+        return json("[{\"role\":\"user\",\"content\":\"oi\"}]");
+    }
+
+    @Test
+    void respostaSemToolsVoltaDireto() {
+        when(openRouter.chat(any())).thenReturn(FINAL_RESP);
+        Map<String, Object> out = service.chat(user, userMessages(), null);
+        assertEquals("resposta final", out.get("reply"));
+        assertNull(out.get("pending_action"));
+    }
+
+    @Test
+    void toolDeLeituraExecutaEReChama() {
+        when(tools.isWriteTool("list_accounts")).thenReturn(false);
+        when(tools.executeRead(eq("list_accounts"), any())).thenReturn("[]");
+        when(openRouter.chat(any())).thenReturn(READ_TOOL_RESP, FINAL_RESP);
+
+        Map<String, Object> out = service.chat(user, userMessages(), null);
+
+        assertEquals("resposta final", out.get("reply"));
+        verify(tools).executeRead(eq("list_accounts"), any());
+        verify(openRouter, times(2)).chat(any());
+        @SuppressWarnings("unchecked")
+        List<String> events = (List<String>) out.get("tool_events");
+        assertEquals(1, events.size());
+    }
+
+    @Test
+    void toolDeEscritaViraPendingActionEPara() {
+        when(tools.isWriteTool("bulk_update_items")).thenReturn(true);
+        when(tools.summarize(eq("bulk_update_items"), any())).thenReturn("Alterar 1 anúncio(s)");
+        when(openRouter.chat(any())).thenReturn(WRITE_TOOL_RESP);
+
+        Map<String, Object> out = service.chat(user, userMessages(), null);
+
+        assertEquals("Vou pausar o anúncio.", out.get("reply"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> pending = (Map<String, Object>) out.get("pending_action");
+        assertNotNull(pending);
+        assertEquals("bulk_update_items", pending.get("tool"));
+        assertNotNull(pendingActions.consume((String) pending.get("id"), 1L));
+        verify(openRouter, times(1)).chat(any());
+        verify(tools, never()).executeWrite(any(), any());
+    }
+
+    @Test
+    void erroDeToolViraToolResultENaoDerruba() {
+        when(tools.isWriteTool("list_accounts")).thenReturn(false);
+        when(tools.executeRead(eq("list_accounts"), any()))
+                .thenThrow(new IllegalStateException("ML fora do ar"));
+        when(openRouter.chat(any())).thenReturn(READ_TOOL_RESP, FINAL_RESP);
+        Map<String, Object> out = service.chat(user, userMessages(), null);
+        assertEquals("resposta final", out.get("reply"));
+    }
+
+    @Test
+    void limiteDeIteracoesCorta() {
+        when(tools.isWriteTool("list_accounts")).thenReturn(false);
+        when(tools.executeRead(eq("list_accounts"), any())).thenReturn("[]");
+        when(openRouter.chat(any())).thenReturn(READ_TOOL_RESP);
+        Map<String, Object> out = service.chat(user, userMessages(), null);
+        assertTrue(((String) out.get("reply")).contains("Não consegui concluir"));
+        verify(openRouter, times(8)).chat(any());
+    }
+
+    // Deviation from the plan: AiToolRegistry.summarize now throws
+    // IllegalArgumentException on invalid write args (Task 4 review fix).
+    // The write branch must catch it, feed it back as a tool result, and
+    // keep looping instead of creating a pending action / crashing chat().
+    @Test
+    void toolDeEscritaComArgsInvalidosViraToolResultENaoCriaPendingAction() {
+        when(tools.isWriteTool("bulk_update_items")).thenReturn(true);
+        when(tools.summarize(eq("bulk_update_items"), any()))
+                .thenThrow(new IllegalArgumentException("groups vazio ou inválido"));
+        when(openRouter.chat(any())).thenReturn(WRITE_TOOL_RESP, FINAL_RESP);
+
+        Map<String, Object> out = service.chat(user, userMessages(), null);
+
+        assertEquals("resposta final", out.get("reply"));
+        assertNull(out.get("pending_action"));
+        verify(openRouter, times(2)).chat(any());
+        verify(tools, never()).executeWrite(any(), any());
+    }
+
+    // Defesa: o modelo pode alucinar uma tool que não foi oferecida a este
+    // usuário (toolDefinitions filtra por permissão). O loop não pode
+    // despachá-la — vira tool result de erro e segue.
+    @Test
+    void toolNaoOferecidaNaoExecutaEViraToolResult() {
+        when(tools.toolDefinitions(user)).thenReturn(MAPPER.createArrayNode());
+        when(openRouter.chat(any())).thenReturn(READ_TOOL_RESP, FINAL_RESP);
+
+        Map<String, Object> out = service.chat(user, userMessages(), null);
+
+        assertEquals("resposta final", out.get("reply"));
+        assertNull(out.get("pending_action"));
+        verify(tools, never()).executeRead(any(), any());
+        verify(tools, never()).summarize(any(), any());
+        verify(tools, never()).executeWrite(any(), any());
+        @SuppressWarnings("unchecked")
+        List<String> events = (List<String>) out.get("tool_events");
+        assertEquals(1, events.size());
+        assertTrue(events.get(0).contains("não disponível"));
+    }
+}

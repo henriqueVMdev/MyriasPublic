@@ -13,7 +13,8 @@ public final class Permissions {
 
     public static final List<String> SECTIONS = List.of(
             "dashboard", "performance", "repetidos", "bulk", "clone", "promocoes",
-            "logs", "planilhas", "perguntas", "mensagens", "atendimento_historico"
+            "logs", "planilhas", "perguntas", "mensagens", "atendimento_historico",
+            "assistente"
     );
 
     public static final List<String> ACTIONS = List.of(

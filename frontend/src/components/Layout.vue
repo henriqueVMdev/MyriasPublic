@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
 import Sidebar from "./Sidebar.vue";
+import AssistantWidget from "./AssistantWidget.vue";
 import { Menu, Sun, Moon } from "lucide-vue-next";
 import { useThemeStore } from "@/stores/theme";
+import { useAuthStore } from "@/stores/auth";
 
 const theme = useThemeStore();
+const auth = useAuthStore();
 const sidebarOpen = ref(false);
 
 // Colapso da sidebar no desktop — persistido entre sessões
@@ -70,6 +73,9 @@ watch(collapsed, (v) => localStorage.setItem(COLLAPSE_KEY, v ? "1" : "0"));
         </div>
       </main>
     </div>
+
+    <!-- Assistente de IA (flutua acima do toggle de tema) -->
+    <AssistantWidget v-if="auth.can('assistente')" />
 
     <!-- Toggle de tema: bolinha flutuante no canto inferior direito.
          Claro → bola preta/lua branca (vai pro escuro). Escuro → bola branca/sol preto (vai pro claro). -->
