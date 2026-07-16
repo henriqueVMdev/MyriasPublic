@@ -1,4 +1,4 @@
-repackage com.hrb.mlmanager.meli;
+package com.hrb.mlmanager.meli;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
