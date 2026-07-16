@@ -80,4 +80,36 @@ class OpenRouterClientTest {
         assertEquals("anthropic/claude-sonnet-4.5", f.client().resolveModel("modelo/inexistente"));
         assertEquals("anthropic/claude-sonnet-4.5", f.client().resolveModel(null));
     }
+
+    @Test
+    void carregaCatalogoDinamicoSomenteComModelosDeTools() {
+        Fixture f = fixture("test-key");
+        f.server().expect(requestTo(
+                        "https://openrouter.ai/api/v1/models"
+                                + "?supported_parameters=tools&output_modalities=text&sort=most-popular"))
+                .andExpect(header("Authorization", "Bearer test-key"))
+                .andRespond(withSuccess("""
+                        {"data":[
+                          {"id":"x/modelo-1","name":"Modelo Um"},
+                          {"id":"y/modelo-2","name":"Modelo Dois"}
+                        ]}
+                        """, MediaType.APPLICATION_JSON));
+
+        List<OpenRouterClient.ModelOption> models = f.client().availableModels();
+
+        assertEquals("x/modelo-1", models.get(0).id());
+        assertEquals("Modelo Um", models.get(0).name());
+        assertEquals("y/modelo-2", models.get(1).id());
+        f.server().verify();
+    }
+
+    @Test
+    void catalogoUsaConfiguracaoComoFallbackSemApiKey() {
+        Fixture f = fixture("");
+
+        List<OpenRouterClient.ModelOption> models = f.client().availableModels();
+
+        assertTrue(models.stream().anyMatch(m -> m.id().equals("anthropic/claude-sonnet-4.5")));
+        assertTrue(models.stream().anyMatch(m -> m.id().equals("openai/gpt-4.1")));
+    }
 }

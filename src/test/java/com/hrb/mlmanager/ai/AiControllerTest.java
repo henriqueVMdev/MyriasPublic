@@ -106,11 +106,15 @@ class AiControllerTest {
 
     @Test
     void modelsListaConfiguracaoGlobalParaAdmin() throws Exception {
-        when(modelSettings.availableModels()).thenReturn(List.of("a", "b"));
+        when(modelSettings.availableModels()).thenReturn(List.of(
+                new OpenRouterClient.ModelOption("a", "Modelo A"),
+                new OpenRouterClient.ModelOption("b", "Modelo B")
+        ));
         when(modelSettings.currentModel()).thenReturn("b");
         mvc.perform(get("/api/ai/models"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.models[0]").value("a"))
+                .andExpect(jsonPath("$.models[0].id").value("a"))
+                .andExpect(jsonPath("$.models[0].name").value("Modelo A"))
                 .andExpect(jsonPath("$.selected").value("b"));
         verify(security).requireAdmin(any());
     }

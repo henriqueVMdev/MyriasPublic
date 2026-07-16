@@ -38,10 +38,12 @@ async function open() {
 }
 
 async function onModelChange(event: Event) {
-  const selected = (event.target as HTMLSelectElement).value;
+  const input = event.target as HTMLInputElement;
+  const selected = input.value;
   try {
     await store.selectModel(selected);
   } catch (e) {
+    input.value = store.model || "";
     console.error("Falha ao alterar modelo do OpenRouter:", e);
   }
 }
@@ -89,20 +91,19 @@ function onKeydown(e: KeyboardEvent) {
     <div class="flex items-center gap-2 px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
       <Bot :size="18" class="text-indigo-500 shrink-0" />
       <span class="font-semibold text-sm">Assistente</span>
-      <select
+      <input
         v-if="auth.isAdmin"
         :value="store.model || ''"
         @change="onModelChange"
         :disabled="store.modelSaving"
-        class="ml-auto max-w-[150px] text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-transparent px-1 py-0.5"
+        list="openrouter-model-catalog"
+        placeholder="Buscar modelo..."
+        class="ml-auto w-[180px] text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-transparent px-1.5 py-1"
         title="Modelo global de IA (somente administradores)"
-      >
-        <option v-if="!store.model" value="" disabled>Carregando...</option>
-        <option v-if="store.model && !store.models.includes(store.model)" :value="store.model">
-          {{ store.model }}
-        </option>
-        <option v-for="m in store.models" :key="m" :value="m">{{ m }}</option>
-      </select>
+      />
+      <datalist v-if="auth.isAdmin" id="openrouter-model-catalog">
+        <option v-for="m in store.models" :key="m.id" :value="m.id">{{ m.name }}</option>
+      </datalist>
       <button @click="store.clear()" class="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800" title="Limpar conversa">
         <Trash2 :size="16" />
       </button>

@@ -7,6 +7,7 @@ import {
   listModels,
   updateModel,
   type PendingAction,
+  type OpenRouterModelOption,
 } from "@/api/assistant";
 
 export interface ChatEntry {
@@ -33,7 +34,7 @@ export const useAssistantStore = defineStore("assistant", () => {
   const saved = loadSaved();
   const entries = ref<ChatEntry[]>(saved.entries);
   const model = ref<string | null>(null);
-  const models = ref<string[]>([]);
+  const models = ref<OpenRouterModelOption[]>([]);
   const modelsLoaded = ref(false);
   const modelSaving = ref(false);
   const pendingAction = ref<PendingAction | null>(null);

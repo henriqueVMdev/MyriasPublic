@@ -25,7 +25,11 @@ class AiModelSettingsServiceTest {
         openRouter = mock(OpenRouterClient.class);
         service = new AiModelSettingsService(repository, openRouter);
         when(openRouter.models()).thenReturn(List.of("modelo/a", "modelo/b"));
-        when(openRouter.resolveModel(null)).thenReturn("modelo/a");
+        when(openRouter.defaultModel()).thenReturn("modelo/a");
+        when(openRouter.availableModels()).thenReturn(List.of(
+                new OpenRouterClient.ModelOption("modelo/a", "Modelo A"),
+                new OpenRouterClient.ModelOption("modelo/b", "Modelo B")
+        ));
     }
 
     @Test
@@ -39,8 +43,6 @@ class AiModelSettingsServiceTest {
     void usaModeloPersistidoQuandoPermitido() {
         when(repository.findById(AiModelSetting.SINGLETON_ID))
                 .thenReturn(Optional.of(new AiModelSetting("modelo/b")));
-        when(openRouter.resolveModel("modelo/b")).thenReturn("modelo/b");
-
         assertEquals("modelo/b", service.currentModel());
     }
 

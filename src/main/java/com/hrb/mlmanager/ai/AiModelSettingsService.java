@@ -16,8 +16,8 @@ public class AiModelSettingsService {
         this.openRouter = openRouter;
     }
 
-    public List<String> availableModels() {
-        return openRouter.models();
+    public List<OpenRouterClient.ModelOption> availableModels() {
+        return openRouter.availableModels();
     }
 
     @Transactional(readOnly = true)
@@ -25,13 +25,17 @@ public class AiModelSettingsService {
         String configured = repository.findById(AiModelSetting.SINGLETON_ID)
                 .map(AiModelSetting::getModelId)
                 .orElse(null);
-        return openRouter.resolveModel(configured);
+        return configured == null || configured.isBlank()
+                ? openRouter.defaultModel()
+                : configured;
     }
 
     @Transactional
     public String updateModel(String model) {
         String requested = model == null ? "" : model.strip();
-        if (requested.isBlank() || !openRouter.models().contains(requested)) {
+        boolean available = openRouter.availableModels().stream()
+                .anyMatch(option -> option.id().equals(requested));
+        if (requested.isBlank() || !available) {
             throw new IllegalArgumentException("Modelo OpenRouter invalido ou nao permitido.");
         }
 

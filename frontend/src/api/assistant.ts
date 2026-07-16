@@ -25,6 +25,11 @@ export interface ConfirmResponse {
   result: Record<string, unknown>;
 }
 
+export interface OpenRouterModelOption {
+  id: string;
+  name: string;
+}
+
 // Timeout longo: o loop pode encadear várias consultas ao ML + o modelo.
 export async function sendChat(messages: AssistantMessage[]): Promise<ChatResponse> {
   const { data } = await api.post<ChatResponse>(
@@ -44,8 +49,8 @@ export async function rejectAction(id: string): Promise<void> {
   await api.post(`/ai/actions/${id}/reject`);
 }
 
-export async function listModels(): Promise<{ models: string[]; selected: string }> {
-  const { data } = await api.get<{ models: string[]; selected: string }>("/ai/models");
+export async function listModels(): Promise<{ models: OpenRouterModelOption[]; selected: string }> {
+  const { data } = await api.get<{ models: OpenRouterModelOption[]; selected: string }>("/ai/models");
   return data;
 }
 
