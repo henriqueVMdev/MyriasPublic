@@ -11,6 +11,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -26,17 +27,19 @@ public class AiController {
     private final AiToolRegistry tools;
     private final PendingActionStore pendingActions;
     private final PanelSecurity security;
-    private final OpenRouterClient openRouter;
+    private final AiModelSettingsService modelSettings;
 
     public AiController(AiAssistantService assistant, AiToolRegistry tools,
                         PendingActionStore pendingActions, PanelSecurity security,
-                        OpenRouterClient openRouter) {
+                        AiModelSettingsService modelSettings) {
         this.assistant = assistant;
         this.tools = tools;
         this.pendingActions = pendingActions;
         this.security = security;
-        this.openRouter = openRouter;
+        this.modelSettings = modelSettings;
     }
+
+    public record ModelUpdate(String model) {}
 
     @PostMapping("/chat")
     public Map<String, Object> chat(@RequestBody JsonNode body, HttpServletRequest request) {
@@ -47,7 +50,7 @@ public class AiController {
                     "messages nao pode ser vazio");
         }
         try {
-            return assistant.chat(user, messages, body.path("model").asText(null));
+            return assistant.chat(user, messages);
         } catch (OpenRouterException e) {
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("reply", "Assistente indisponível: " + e.getMessage());
@@ -88,10 +91,20 @@ public class AiController {
 
     @GetMapping("/models")
     public Map<String, Object> models(HttpServletRequest request) {
-        security.require(request, "assistente");
+        security.requireAdmin(request);
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("models", openRouter.models());
-        out.put("default", openRouter.defaultModel());
+        out.put("models", modelSettings.availableModels());
+        out.put("selected", modelSettings.currentModel());
         return out;
+    }
+
+    @PutMapping("/model")
+    public Map<String, Object> updateModel(@RequestBody ModelUpdate body, HttpServletRequest request) {
+        security.requireAdmin(request);
+        try {
+            return Map.of("selected", modelSettings.updateModel(body == null ? null : body.model()));
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, e.getMessage());
+        }
     }
 }

@@ -26,10 +26,10 @@ export interface ConfirmResponse {
 }
 
 // Timeout longo: o loop pode encadear várias consultas ao ML + o modelo.
-export async function sendChat(messages: AssistantMessage[], model?: string): Promise<ChatResponse> {
+export async function sendChat(messages: AssistantMessage[]): Promise<ChatResponse> {
   const { data } = await api.post<ChatResponse>(
     "/ai/chat",
-    { messages, ...(model ? { model } : {}) },
+    { messages },
     { timeout: 300_000 }
   );
   return data;
@@ -44,7 +44,12 @@ export async function rejectAction(id: string): Promise<void> {
   await api.post(`/ai/actions/${id}/reject`);
 }
 
-export async function listModels(): Promise<{ models: string[]; default: string }> {
-  const { data } = await api.get<{ models: string[]; default: string }>("/ai/models");
+export async function listModels(): Promise<{ models: string[]; selected: string }> {
+  const { data } = await api.get<{ models: string[]; selected: string }>("/ai/models");
+  return data;
+}
+
+export async function updateModel(model: string): Promise<{ selected: string }> {
+  const { data } = await api.put<{ selected: string }>("/ai/model", { model });
   return data;
 }

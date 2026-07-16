@@ -5,6 +5,7 @@ import {
   confirmAction,
   rejectAction,
   listModels,
+  updateModel,
   type PendingAction,
 } from "@/api/assistant";
 
@@ -15,33 +16,37 @@ export interface ChatEntry {
 
 const STORAGE_KEY = "hrb-assistant";
 
-function loadSaved(): { entries: ChatEntry[]; model: string | null } {
+function loadSaved(): { entries: ChatEntry[] } {
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const saved = JSON.parse(raw);
+      return { entries: Array.isArray(saved.entries) ? saved.entries : [] };
+    }
   } catch {
     // estado corrompido → começa limpo
   }
-  return { entries: [], model: null };
+  return { entries: [] };
 }
 
 export const useAssistantStore = defineStore("assistant", () => {
   const saved = loadSaved();
   const entries = ref<ChatEntry[]>(saved.entries);
-  const model = ref<string | null>(saved.model);
+  const model = ref<string | null>(null);
   const models = ref<string[]>([]);
   const modelsLoaded = ref(false);
+  const modelSaving = ref(false);
   const pendingAction = ref<PendingAction | null>(null);
   const isOpen = ref(false);
   const loading = ref(false);
 
   // Conversa sobrevive à navegação/F5, morre ao fechar a aba (sessionStorage).
   watch(
-    [entries, model],
+    entries,
     () => {
       sessionStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ entries: entries.value, model: model.value })
+        JSON.stringify({ entries: entries.value })
       );
     },
     { deep: true }
@@ -52,10 +57,26 @@ export const useAssistantStore = defineStore("assistant", () => {
     try {
       const data = await listModels();
       models.value = data.models;
-      if (!model.value) model.value = data.default;
+      model.value = data.selected;
       modelsLoaded.value = true;
     } catch {
       // sem lista o dropdown fica só com o modelo atual
+    }
+  }
+
+  async function selectModel(selected: string) {
+    if (!selected || selected === model.value || modelSaving.value) return;
+    const previous = model.value;
+    model.value = selected;
+    modelSaving.value = true;
+    try {
+      const data = await updateModel(selected);
+      model.value = data.selected;
+    } catch (e) {
+      model.value = previous;
+      throw e;
+    } finally {
+      modelSaving.value = false;
     }
   }
 
@@ -72,7 +93,7 @@ export const useAssistantStore = defineStore("assistant", () => {
     pendingAction.value = null; // nova mensagem invalida a proposta anterior
     loading.value = true;
     try {
-      const resp = await sendChat(history(), model.value ?? undefined);
+      const resp = await sendChat(history());
       for (const ev of resp.tool_events || []) {
         entries.value.push({ role: "event", content: ev });
       }
@@ -139,10 +160,13 @@ export const useAssistantStore = defineStore("assistant", () => {
     entries,
     model,
     models,
+    modelsLoaded,
+    modelSaving,
     pendingAction,
     isOpen,
     loading,
     ensureModels,
+    selectModel,
     send,
     confirm,
     reject,

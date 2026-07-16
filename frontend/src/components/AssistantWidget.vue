@@ -3,6 +3,7 @@ import { nextTick, ref, watch } from "vue";
 import { Bot, X, SendHorizonal, Loader2, Trash2, Search, Check } from "lucide-vue-next";
 import { marked } from "marked";
 import { useAssistantStore } from "@/stores/assistant";
+import { useAuthStore } from "@/stores/auth";
 
 // Links do modelo: só http(s), mailto, âncora ou caminho — derruba javascript:/data: etc.
 const SAFE_HREF = /^(https?:|mailto:|#|\/)/i;
@@ -18,6 +19,7 @@ marked.use({
 });
 
 const store = useAssistantStore();
+const auth = useAuthStore();
 const draft = ref("");
 const scrollArea = ref<HTMLElement | null>(null);
 
@@ -31,8 +33,17 @@ function md(s: string): string {
 
 async function open() {
   store.isOpen = true;
-  await store.ensureModels();
+  if (auth.isAdmin) await store.ensureModels();
   scrollToEnd();
+}
+
+async function onModelChange(event: Event) {
+  const selected = (event.target as HTMLSelectElement).value;
+  try {
+    await store.selectModel(selected);
+  } catch (e) {
+    console.error("Falha ao alterar modelo do OpenRouter:", e);
+  }
 }
 
 function scrollToEnd() {
@@ -79,10 +90,14 @@ function onKeydown(e: KeyboardEvent) {
       <Bot :size="18" class="text-indigo-500 shrink-0" />
       <span class="font-semibold text-sm">Assistente</span>
       <select
-        v-model="store.model"
+        v-if="auth.isAdmin"
+        :value="store.model || ''"
+        @change="onModelChange"
+        :disabled="store.modelSaving"
         class="ml-auto max-w-[150px] text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-transparent px-1 py-0.5"
-        title="Modelo de IA"
+        title="Modelo global de IA (somente administradores)"
       >
+        <option v-if="!store.model" value="" disabled>Carregando...</option>
         <option v-if="store.model && !store.models.includes(store.model)" :value="store.model">
           {{ store.model }}
         </option>

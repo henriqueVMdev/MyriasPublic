@@ -1,0 +1,44 @@
+package com.hrb.mlmanager.ai;
+
+import java.util.List;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/** Lê e persiste o modelo global escolhido pelo administrador. */
+@Service
+public class AiModelSettingsService {
+
+    private final AiModelSettingRepository repository;
+    private final OpenRouterClient openRouter;
+
+    public AiModelSettingsService(AiModelSettingRepository repository, OpenRouterClient openRouter) {
+        this.repository = repository;
+        this.openRouter = openRouter;
+    }
+
+    public List<String> availableModels() {
+        return openRouter.models();
+    }
+
+    @Transactional(readOnly = true)
+    public String currentModel() {
+        String configured = repository.findById(AiModelSetting.SINGLETON_ID)
+                .map(AiModelSetting::getModelId)
+                .orElse(null);
+        return openRouter.resolveModel(configured);
+    }
+
+    @Transactional
+    public String updateModel(String model) {
+        String requested = model == null ? "" : model.strip();
+        if (requested.isBlank() || !openRouter.models().contains(requested)) {
+            throw new IllegalArgumentException("Modelo OpenRouter invalido ou nao permitido.");
+        }
+
+        AiModelSetting setting = repository.findById(AiModelSetting.SINGLETON_ID)
+                .orElseGet(() -> new AiModelSetting(requested));
+        setting.setModelId(requested);
+        repository.save(setting);
+        return requested;
+    }
+}

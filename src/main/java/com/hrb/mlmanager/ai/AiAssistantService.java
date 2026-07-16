@@ -32,20 +32,23 @@ public class AiAssistantService {
     private static final ZoneId SAO_PAULO = ZoneId.of("America/Sao_Paulo");
 
     private final OpenRouterClient openRouter;
+    private final AiModelSettingsService modelSettings;
     private final AiToolRegistry tools;
     private final PendingActionStore pendingActions;
     private final MeliAuthService meliAuth;
 
-    public AiAssistantService(OpenRouterClient openRouter, AiToolRegistry tools,
+    public AiAssistantService(OpenRouterClient openRouter, AiModelSettingsService modelSettings,
+                              AiToolRegistry tools,
                               PendingActionStore pendingActions, MeliAuthService meliAuth) {
         this.openRouter = openRouter;
+        this.modelSettings = modelSettings;
         this.tools = tools;
         this.pendingActions = pendingActions;
         this.meliAuth = meliAuth;
     }
 
-    public Map<String, Object> chat(AppUser user, JsonNode clientMessages, String requestedModel) {
-        String model = openRouter.resolveModel(requestedModel);
+    public Map<String, Object> chat(AppUser user, JsonNode clientMessages) {
+        String model = modelSettings.currentModel();
         ArrayNode messages = MAPPER.createArrayNode();
         messages.add(systemMessage());
         copyClientMessages(clientMessages, messages);

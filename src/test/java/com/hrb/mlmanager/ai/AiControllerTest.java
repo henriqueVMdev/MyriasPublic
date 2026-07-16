@@ -13,9 +13,11 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.server.ResponseStatusException;
 
 class AiControllerTest {
 
@@ -25,7 +27,7 @@ class AiControllerTest {
     private AiToolRegistry tools;
     private PendingActionStore pendingActions;
     private PanelSecurity security;
-    private OpenRouterClient openRouter;
+    private AiModelSettingsService modelSettings;
     private AppUser user;
     private MockMvc mvc;
 
@@ -35,7 +37,7 @@ class AiControllerTest {
         tools = mock(AiToolRegistry.class);
         pendingActions = new PendingActionStore(Duration.ofMinutes(10));
         security = mock(PanelSecurity.class);
-        openRouter = mock(OpenRouterClient.class);
+        modelSettings = mock(AiModelSettingsService.class);
 
         user = mock(AppUser.class);
         when(user.getId()).thenReturn(1L);
@@ -44,7 +46,7 @@ class AiControllerTest {
         when(security.require(any(), eq("assistente"))).thenReturn(user);
 
         mvc = MockMvcBuilders.standaloneSetup(
-                new AiController(assistant, tools, pendingActions, security, openRouter)).build();
+                new AiController(assistant, tools, pendingActions, security, modelSettings)).build();
     }
 
     @Test
@@ -55,7 +57,7 @@ class AiControllerTest {
 
     @Test
     void chatDevolveRespostaDoService() throws Exception {
-        when(assistant.chat(eq(user), any(), isNull()))
+        when(assistant.chat(eq(user), any()))
                 .thenReturn(Map.of("reply", "oi", "tool_events", List.of()));
         mvc.perform(post("/api/ai/chat").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"messages\":[{\"role\":\"user\",\"content\":\"oi\"}]}"))
@@ -65,7 +67,7 @@ class AiControllerTest {
 
     @Test
     void erroDoOpenRouterVira200ComErrorTrue() throws Exception {
-        when(assistant.chat(eq(user), any(), isNull()))
+        when(assistant.chat(eq(user), any()))
                 .thenThrow(new OpenRouterException("Sem créditos"));
         mvc.perform(post("/api/ai/chat").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"messages\":[{\"role\":\"user\",\"content\":\"oi\"}]}"))
@@ -103,12 +105,63 @@ class AiControllerTest {
     }
 
     @Test
-    void modelsListaDoConfig() throws Exception {
-        when(openRouter.models()).thenReturn(List.of("a", "b"));
-        when(openRouter.defaultModel()).thenReturn("a");
+    void modelsListaConfiguracaoGlobalParaAdmin() throws Exception {
+        when(modelSettings.availableModels()).thenReturn(List.of("a", "b"));
+        when(modelSettings.currentModel()).thenReturn("b");
         mvc.perform(get("/api/ai/models"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.models[0]").value("a"))
-                .andExpect(jsonPath("$.default").value("a"));
+                .andExpect(jsonPath("$.selected").value("b"));
+        verify(security).requireAdmin(any());
+    }
+
+    @Test
+    void adminPodeAlterarModeloGlobal() throws Exception {
+        when(modelSettings.updateModel("b")).thenReturn("b");
+        mvc.perform(put("/api/ai/model")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"model\":\"b\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.selected").value("b"));
+        verify(security).requireAdmin(any());
+        verify(modelSettings).updateModel("b");
+    }
+
+    @Test
+    void modeloInvalidoDa422() throws Exception {
+        when(modelSettings.updateModel("x"))
+                .thenThrow(new IllegalArgumentException("Modelo invalido"));
+        mvc.perform(put("/api/ai/model")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"model\":\"x\"}"))
+                .andExpect(status().isUnprocessableEntity());
+    }
+
+    @Test
+    void usuarioComumNaoPodeConsultarNemAlterarModelos() throws Exception {
+        when(security.requireAdmin(any()))
+                .thenThrow(new ResponseStatusException(HttpStatus.FORBIDDEN, "Somente admin"));
+
+        mvc.perform(get("/api/ai/models"))
+                .andExpect(status().isForbidden());
+        mvc.perform(put("/api/ai/model")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"model\":\"b\"}"))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(modelSettings);
+    }
+
+    @Test
+    void modeloEnviadoManualmenteNoChatNaoEUsadoPeloController() throws Exception {
+        when(assistant.chat(eq(user), any()))
+                .thenReturn(Map.of("reply", "oi", "tool_events", List.of()));
+        mvc.perform(post("/api/ai/chat").contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"model":"modelo/forjado",
+                                 "messages":[{"role":"user","content":"oi"}]}
+                                """))
+                .andExpect(status().isOk());
+        verify(assistant).chat(eq(user), any());
     }
 }
