@@ -1,10 +1,12 @@
 package com.hrb.mlmanager.meli;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import jakarta.annotation.PreDestroy;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -223,15 +225,104 @@ public class MeliClient {
             params.put("attributes", String.join(",", fields));
         }
         MeliResponse resp = get("/items", params, userId);
-        List<JsonNode> bodies = new ArrayList<>();
+        Map<String, JsonNode> bodiesById = new LinkedHashMap<>();
+
         if (resp.data() != null && resp.data().isArray()) {
+            int index = 0;
             for (JsonNode entry : resp.data()) {
-                if (entry.path("code").asInt() == 200 && entry.has("body")) {
-                    bodies.add(entry.get("body"));
+                String expectedId = index < batch.size() ? batch.get(index) : null;
+                index++;
+
+                int itemCode = entry.path("code").asInt(resp.status());
+                JsonNode body = entry.get("body");
+                if (itemCode == 200 && body != null && body.isObject()) {
+                    String itemId = expectedId;
+                    if (itemId == null || itemId.isBlank()) {
+                        itemId = body.path("id").asText("");
+                    }
+                    if (!itemId.isBlank()) {
+                        JsonNode selected = body;
+                        if (attributesRequested(fields) && attributesMissing(body)) {
+                            JsonNode detailed = fetchItemIndividually(itemId, true, userId);
+                            if (detailed != null) {
+                                selected = detailed;
+                            } else {
+                                log.warn("Multiget item {} veio sem attributes e o refetch individual falhou; "
+                                        + "mantendo o corpo parcial", itemId);
+                            }
+                        }
+                        bodiesById.put(itemId, selected);
+                    }
+                } else {
+                    log.warn("Multiget item {} rejeitado: code={} detail={}",
+                            expectedId == null ? "desconhecido" : expectedId,
+                            itemCode, responseDetail(entry));
                 }
             }
+        } else {
+            String dataType = resp.data() == null ? "null" : resp.data().getNodeType().name();
+            log.warn("Multiget de {} item(ns) retornou HTTP {} com corpo {}; "
+                    + "tentando consultas individuais", batch.size(), resp.status(), dataType);
+        }
+
+        // O multiget pode responder HTTP 200 e ainda devolver code=403/404 por
+        // item. Tenta o endpoint individual em vez de transformar a falha numa
+        // lista vazia, comportamento que escondia o problema no frontend.
+        for (String itemId : batch) {
+            if (bodiesById.containsKey(itemId)) continue;
+            JsonNode fallback = fetchItemIndividually(itemId, attributesRequested(fields), userId);
+            if (fallback != null) {
+                bodiesById.put(itemId, fallback);
+            }
+        }
+
+        List<JsonNode> bodies = new ArrayList<>();
+        for (String itemId : batch) {
+            JsonNode body = bodiesById.get(itemId);
+            if (body != null) bodies.add(body);
         }
         return bodies;
+    }
+
+    private JsonNode fetchItemIndividually(String itemId, boolean includeAllAttributes, Long userId) {
+        MeliResponse resp;
+        if (includeAllAttributes) {
+            resp = get("/items/" + itemId, Map.of("include_attributes", "all"), userId);
+        } else {
+            resp = get("/items/" + itemId, userId);
+        }
+        if (resp.status() == 200 && resp.data() != null && resp.data().isObject()) {
+            log.info("Fallback individual recuperou item {}", itemId);
+            return resp.data();
+        }
+        log.warn("Fallback individual do item {} falhou: HTTP {} detail={}",
+                itemId, resp.status(), responseDetail(resp.data()));
+        return null;
+    }
+
+    private static boolean attributesRequested(List<String> fields) {
+        return fields != null && fields.contains("attributes");
+    }
+
+    private static boolean attributesMissing(JsonNode body) {
+        JsonNode attributes = body.get("attributes");
+        return attributes == null || !attributes.isArray() || attributes.isEmpty();
+    }
+
+    private static String responseDetail(JsonNode node) {
+        if (node == null || node.isNull()) return "sem corpo";
+        for (String pointer : List.of("/body/message", "/body/error", "/message", "/error")) {
+            JsonNode value = node.at(pointer);
+            if (!value.isMissingNode() && !value.isNull() && !value.asText().isBlank()) {
+                return abbreviate(value.asText());
+            }
+        }
+        return abbreviate(node.isValueNode() ? node.asText() : node.toString());
+    }
+
+    private static String abbreviate(String value) {
+        String clean = value == null ? "" : value.replaceAll("\\s+", " ").trim();
+        return clean.length() <= 200 ? clean : clean.substring(0, 200) + "...";
     }
 
     /**
@@ -344,5 +435,10 @@ public class MeliClient {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    @PreDestroy
+    public void close() {
+        pool.shutdownNow();
     }
 }

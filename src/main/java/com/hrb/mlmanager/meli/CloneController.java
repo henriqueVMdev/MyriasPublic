@@ -40,8 +40,12 @@ public class CloneController {
         try {
             return service.preview(body.itemId());
         } catch (Exception e) {
+            String message = e.getMessage();
+            if (message == null || message.isBlank()) {
+                message = "Nao foi possivel obter o anuncio. Verifique o link/ID e tente novamente.";
+            }
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Nao foi possivel obter o anuncio. Verifique o link/ID e tente novamente.");
+                    message, e);
         }
     }
 

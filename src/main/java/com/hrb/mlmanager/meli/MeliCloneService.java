@@ -42,6 +42,10 @@ public class MeliCloneService {
             "SELLER_PACKAGE_LENGTH", "SELLER_PACKAGE_WEIGHT",
             "seller_package_height", "seller_package_width",
             "seller_package_length", "seller_package_weight");
+    private static final Set<String> FORM_SKIP_ATTR_IDS = Set.of(
+            "PACKAGE_HEIGHT", "PACKAGE_WIDTH", "PACKAGE_LENGTH", "PACKAGE_WEIGHT",
+            "SELLER_PACKAGE_HEIGHT", "SELLER_PACKAGE_WIDTH",
+            "SELLER_PACKAGE_LENGTH", "SELLER_PACKAGE_WEIGHT", "SHIPMENT_PACKAGING");
     private static final Map<String, String> PACKAGE_ATTR_REMAP = Map.of(
             "PACKAGE_HEIGHT", "seller_package_height",
             "PACKAGE_WIDTH", "seller_package_width",
@@ -104,9 +108,14 @@ public class MeliCloneService {
 
         Set<String> blockedAttrs = getBlockedAttributeIds(categoryId);
         List<JsonNode> itemAttrs = copyArray(item.path("attributes"));
+        boolean catalogHasSourceAttrs = itemAttrs.stream().anyMatch(attr ->
+                hasAttrValue(attr) && !PACKAGE_ANY_IDS.contains(attr.path("id").asText("")));
         Map<String, Number> usedDefaultDims = injectPackageAttrs(itemAttrs, item, categoryId,
                 previewItem.fromCatalog() ? null : previewItem.ownerUserId());
         List<Map<String, Object>> copyableAttrs = filterAttributes(itemAttrs, blockedAttrs);
+        if (previewItem.fromCatalog() && !catalogHasSourceAttrs) {
+            copyableAttrs = categoryAttributeForm(categoryId);
+        }
         forcePackageAttrs(copyableAttrs, itemAttrs);
 
         Map<String, Object> original = new LinkedHashMap<>();
@@ -321,40 +330,160 @@ public class MeliCloneService {
     }
 
     private PreviewItem fetchCatalogPreview(String catalogId, List<Map<String, Object>> accounts) {
-        List<Long> users = new ArrayList<>();
-        users.add(null);
-        for (Map<String, Object> account : accounts) users.add(number(account.get("user_id")).longValue());
-        for (Long userId : users) {
+        List<Long> userIds = new ArrayList<>();
+        for (Map<String, Object> account : accounts) {
+            userIds.add(number(account.get("user_id")).longValue());
+        }
+        if (userIds.isEmpty()) return null;
+
+        JsonNode offer = null;
+        Long respondingUserId = null;
+        for (Long userId : userIds) {
             try {
-                MeliResponse resp = userId == null
-                        ? client.getPublic("/products/" + catalogId)
-                        : client.get("/products/" + catalogId, userId);
-                if (resp.status() != 200 || resp.data() == null || !resp.data().isObject()) continue;
-                ObjectNode product = (ObjectNode) resp.data();
-                ObjectNode item = MAPPER.createObjectNode();
-                item.put("id", catalogId);
-                item.put("title", firstText(product, "name", "title", ""));
-                item.put("price", product.path("buy_box_winner").path("price").asDouble(0));
-                item.put("category_id", product.path("category_id").asText(""));
-                item.put("condition", "new");
-                item.put("currency_id", product.path("buy_box_winner").path("currency_id").asText("BRL"));
-                item.set("pictures", product.path("pictures").isArray() ? product.path("pictures").deepCopy() : MAPPER.createArrayNode());
-                item.set("attributes", product.path("attributes").isArray() ? product.path("attributes").deepCopy() : MAPPER.createArrayNode());
-                item.putNull("seller_id");
-                item.put("permalink", product.path("permalink").asText(""));
-                item.put("available_quantity", 1);
-                item.put("sold_quantity", 0);
-                item.put("status", "");
-                item.put("listing_type_id", "gold_special");
-                item.set("shipping", MAPPER.createObjectNode());
-                item.set("sale_terms", MAPPER.createArrayNode());
-                item.put("_from_catalog", true);
-                return new PreviewItem(item, catalogId, userId, true);
+                MeliResponse resp = client.get("/products/" + catalogId + "/items",
+                        Map.of("limit", "5"), userId);
+                JsonNode results = resp.data() == null ? null : resp.data().path("results");
+                if (resp.status() == 200 && results != null && results.isArray() && !results.isEmpty()) {
+                    offer = results.get(0);
+                    respondingUserId = userId;
+                    break;
+                }
+                log.info("Clone catalogo {} via /products/{}/items user={} -> HTTP {} resultados={}",
+                        catalogId, catalogId, userId, resp.status(),
+                        results != null && results.isArray() ? results.size() : 0);
             } catch (Exception e) {
-                log.debug("clone catalog {} user={} falhou: {}", catalogId, userId, e.getMessage());
+                log.debug("clone catalog offers {} user={} falhou: {}", catalogId, userId, e.getMessage());
+            }
+        }
+        if (offer == null || !offer.isObject()) return null;
+
+        String categoryId = offer.path("category_id").asText("");
+        double price = offer.path("price").asDouble(0);
+        String condition = offer.path("condition").asText("new");
+        String currencyId = offer.path("currency_id").asText("BRL");
+        String userProductId = offer.path("user_product_id").asText("");
+        log.info("Clone catalogo {}: category_id={} price={} user_product_id={} via ofertas",
+                catalogId, categoryId, price, userProductId);
+
+        ObjectNode userProduct = fetchCatalogUserProduct(userProductId, userIds);
+        ArrayNode attributes = userProduct == null
+                ? MAPPER.createArrayNode()
+                : attributesFromUserProduct(userProduct);
+        ArrayNode pictures = userProduct == null
+                ? MAPPER.createArrayNode()
+                : picturesFromUserProduct(userProduct);
+        String title = userProduct == null ? "" : userProduct.path("name").asText("");
+        if (userProduct != null) {
+            condition = conditionFromUserProduct(userProduct, condition);
+            log.info("Clone catalogo {}: user-product trouxe {} attrs e {} fotos",
+                    catalogId, attributes.size(), pictures.size());
+        }
+
+        ObjectNode item = MAPPER.createObjectNode();
+        item.put("id", catalogId);
+        item.put("title", title);
+        item.put("price", price);
+        item.put("category_id", categoryId);
+        item.put("condition", condition);
+        item.put("currency_id", currencyId);
+        item.set("pictures", pictures);
+        item.set("attributes", attributes);
+        item.putNull("seller_id");
+        item.put("permalink", "");
+        item.put("available_quantity", 1);
+        item.put("sold_quantity", 0);
+        item.put("status", "");
+        item.put("listing_type_id", "gold_special");
+        item.set("shipping", MAPPER.createObjectNode());
+        item.set("sale_terms", MAPPER.createArrayNode());
+        item.put("_from_catalog", true);
+        if (!userProductId.isBlank()) item.put("user_product_id", userProductId);
+        return new PreviewItem(item, catalogId, respondingUserId, true);
+    }
+
+    private ObjectNode fetchCatalogUserProduct(String userProductId, List<Long> userIds) {
+        if (userProductId == null || userProductId.isBlank()) return null;
+        for (Long userId : userIds) {
+            try {
+                MeliResponse resp = client.get("/user-products/" + userProductId, userId);
+                if (resp.status() == 200 && resp.data() != null && resp.data().isObject()) {
+                    return (ObjectNode) resp.data().deepCopy();
+                }
+                log.debug("Clone catalogo user-product {} user={} -> HTTP {}",
+                        userProductId, userId, resp.status());
+            } catch (Exception e) {
+                log.debug("Clone catalogo user-product {} user={} falhou: {}",
+                        userProductId, userId, e.getMessage());
             }
         }
         return null;
+    }
+
+    private static ArrayNode attributesFromUserProduct(ObjectNode userProduct) {
+        ArrayNode out = MAPPER.createArrayNode();
+        JsonNode attrs = userProduct.path("attributes");
+        if (!attrs.isArray()) return out;
+
+        for (JsonNode attr : attrs) {
+            String id = attr.path("id").asText("");
+            if (id.isBlank() || SKIP_ATTR_IDS.contains(id)) continue;
+
+            List<JsonNode> cleanValues = new ArrayList<>();
+            if (attr.path("values").isArray()) {
+                for (JsonNode value : attr.path("values")) {
+                    String valueId = value.path("id").asText(null);
+                    String valueName = value.path("name").asText(null);
+                    if ((valueId != null && !"-1".equals(valueId))
+                            || (valueName != null && !valueName.isBlank())) {
+                        cleanValues.add(value);
+                    }
+                }
+            }
+            if (cleanValues.isEmpty()) continue;
+
+            JsonNode first = cleanValues.get(0);
+            ObjectNode converted = MAPPER.createObjectNode();
+            converted.put("id", id);
+            if (attr.hasNonNull("name")) converted.put("name", attr.path("name").asText());
+            String valueId = first.path("id").asText(null);
+            String valueName = first.path("name").asText(null);
+            if (valueId != null && !"-1".equals(valueId)) converted.put("value_id", valueId);
+            if (valueName != null) converted.put("value_name", valueName);
+            if (first.hasNonNull("struct")) converted.set("value_struct", first.get("struct").deepCopy());
+            if (cleanValues.size() > 1) {
+                ArrayNode values = converted.putArray("values");
+                for (JsonNode value : cleanValues) values.add(value.deepCopy());
+            }
+            out.add(converted);
+        }
+        return out;
+    }
+
+    private static ArrayNode picturesFromUserProduct(ObjectNode userProduct) {
+        ArrayNode out = MAPPER.createArrayNode();
+        JsonNode pictures = userProduct.path("pictures");
+        if (!pictures.isArray()) return out;
+        for (JsonNode picture : pictures) {
+            String url = picture.path("secure_url").asText(picture.path("url").asText(""));
+            if (url.isBlank()) continue;
+            ObjectNode converted = MAPPER.createObjectNode();
+            converted.put("url", url);
+            converted.put("secure_url", picture.path("secure_url").asText(url));
+            if (picture.hasNonNull("id")) converted.put("id", picture.path("id").asText());
+            out.add(converted);
+        }
+        return out;
+    }
+
+    private static String conditionFromUserProduct(ObjectNode userProduct, String fallback) {
+        for (JsonNode attr : userProduct.path("attributes")) {
+            if (!"ITEM_CONDITION".equals(attr.path("id").asText())) continue;
+            JsonNode values = attr.path("values");
+            if (values.isArray() && !values.isEmpty()) {
+                return "2230581".equals(values.get(0).path("id").asText()) ? "used" : "new";
+            }
+        }
+        return fallback;
     }
 
     private String fetchDescription(String itemId, Long userId) {
@@ -468,6 +597,43 @@ public class MeliCloneService {
     }
 
     /**
+     * Para anúncio de catálogo de terceiro, o ML costuma liberar categoria e
+     * preço em /products/{MLBU}/items, mas bloquear atributos e fotos. Nesse
+     * caso devolvemos os campos editáveis da categoria sem valor para o usuário
+     * completar o preview, em vez de falhar com 400.
+     */
+    private List<Map<String, Object>> categoryAttributeForm(String categoryId) {
+        if (categoryId == null || categoryId.isBlank()) return List.of();
+        try {
+            MeliResponse resp = client.getPublic("/categories/" + categoryId + "/attributes");
+            if (resp.status() != 200 || resp.data() == null || !resp.data().isArray()) return List.of();
+
+            List<Map<String, Object>> out = new ArrayList<>();
+            for (JsonNode attr : resp.data()) {
+                String id = attr.path("id").asText("");
+                JsonNode tags = attr.path("tags");
+                if (id.isBlank() || FORM_SKIP_ATTR_IDS.contains(id)
+                        || tags.path("read_only").asBoolean(false)
+                        || tags.path("hidden").asBoolean(false)
+                        || tags.path("inferred").asBoolean(false)) {
+                    continue;
+                }
+                Map<String, Object> field = new LinkedHashMap<>();
+                field.put("id", id);
+                field.put("name", attr.path("name").asText(id));
+                field.put("value_name", "");
+                out.add(field);
+            }
+            log.info("Clone catalogo: formulario da categoria {} com {} campos", categoryId, out.size());
+            return out;
+        } catch (Exception e) {
+            log.warn("Clone catalogo: falha montando formulario da categoria {}: {}",
+                    categoryId, e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
      * Injeta medidas de embalagem na ordem do Python: attrs do item →
      * user-product → shipping.dimensions → default por categoria.
      * Retorna o mapa de defaults quando eles foram usados (senão null),
@@ -498,6 +664,7 @@ public class MeliCloneService {
 
     /** Itens vinculados a user-product guardam as medidas no UP, nao no item. */
     private List<JsonNode> fetchPackageAttrsFromUp(ObjectNode item, Long ownerUserId) {
+        if (item.path("_from_catalog").asBoolean(false)) return List.of();
         String upId = item.path("user_product_id").asText(null);
         if (upId == null || upId.isBlank()) return List.of();
         try {
