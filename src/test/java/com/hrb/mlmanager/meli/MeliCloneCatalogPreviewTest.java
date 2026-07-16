@@ -51,7 +51,11 @@ class MeliCloneCatalogPreviewTest {
             assertTrue(attributes.stream().anyMatch(a ->
                     "BRAND".equals(((Map<?, ?>) a).get("id"))));
             assertTrue(attributes.stream().anyMatch(a ->
-                    "SELLER_PACKAGE_HEIGHT".equals(((Map<?, ?>) a).get("id"))));
+                    "seller_package_height".equals(((Map<?, ?>) a).get("id"))));
+            assertEquals(4, attributes.stream().filter(a ->
+                    String.valueOf(((Map<?, ?>) a).get("id")).startsWith("seller_package_")).count());
+            assertEquals(1, attributes.stream().filter(a ->
+                    "seller_package_width".equals(((Map<?, ?>) a).get("id"))).count());
         } finally {
             client.close();
         }
@@ -139,6 +143,12 @@ class MeliCloneCatalogPreviewTest {
                           {
                             "id": "PACKAGE_HEIGHT",
                             "name": "Altura",
+                            "tags": {}
+                          },
+                          {
+                            "id": "seller_package_width",
+                            "name": "Largura da embalagem vendor",
+                            "value_type": "number_unit",
                             "tags": {}
                           }
                         ]

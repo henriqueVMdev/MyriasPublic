@@ -38,7 +38,13 @@ export interface ClonePreview {
     buying_mode: string;
     listing_type_id: string;
     pictures: Array<{ source: string }>;
-    attributes: Array<{ id: string; name?: string; value_id?: string; value_name?: string }>;
+    attributes: Array<{
+      id: string;
+      name?: string;
+      value_id?: string;
+      value_name?: string;
+      value_struct?: { number: number; unit: string } | null;
+    }>;
     sale_terms: Array<Record<string, unknown>>;
     shipping?: { local_pick_up?: boolean };
     description: string;

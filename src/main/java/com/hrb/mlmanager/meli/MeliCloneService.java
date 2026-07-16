@@ -619,6 +619,7 @@ public class MeliCloneService {
                 String id = attr.path("id").asText("");
                 JsonNode tags = attr.path("tags");
                 if (id.isBlank() || FORM_SKIP_ATTR_IDS.contains(id)
+                        || canonicalPackageAttrId(id) != null
                         || tags.path("read_only").asBoolean(false)
                         || tags.path("hidden").asBoolean(false)
                         || tags.path("inferred").asBoolean(false)) {
@@ -648,12 +649,19 @@ public class MeliCloneService {
     private Map<String, Number> injectPackageAttrs(List<JsonNode> itemAttrs, ObjectNode item,
                                                    String categoryId, Long ownerUserId) {
         Set<String> existingIds = new HashSet<>();
-        for (JsonNode attr : itemAttrs) existingIds.add(attr.path("id").asText(""));
+        for (JsonNode attr : itemAttrs) {
+            String id = attr.path("id").asText("");
+            existingIds.add(canonicalPackageAttrId(id) == null ? id : canonicalPackageAttrId(id));
+        }
         for (JsonNode attr : fetchPackageAttrsFromUp(item, ownerUserId)) {
-            if (existingIds.add(attr.path("id").asText())) itemAttrs.add(attr);
+            String id = attr.path("id").asText("");
+            String canonical = canonicalPackageAttrId(id);
+            if (existingIds.add(canonical == null ? id : canonical)) itemAttrs.add(attr);
         }
         for (JsonNode attr : parseShippingDimensions(item.path("shipping").path("dimensions").asText(null))) {
-            if (existingIds.add(attr.path("id").asText())) itemAttrs.add(attr);
+            String id = attr.path("id").asText("");
+            String canonical = canonicalPackageAttrId(id);
+            if (existingIds.add(canonical == null ? id : canonical)) itemAttrs.add(attr);
         }
         boolean hasPackage = itemAttrs.stream().anyMatch(a -> a.path("id").asText("").toUpperCase(Locale.ROOT).contains("PACKAGE"));
         if (hasPackage) return null;
@@ -693,17 +701,60 @@ public class MeliCloneService {
      * as dimensoes e o remap do create() converte pra seller_package_*.
      */
     private static void forcePackageAttrs(List<Map<String, Object>> copyableAttrs, List<JsonNode> itemAttrs) {
-        Set<String> existing = new HashSet<>();
-        for (Map<String, Object> a : copyableAttrs) existing.add(String.valueOf(a.get("id")));
+        List<Map<String, Object>> regularAttrs = new ArrayList<>();
+        Map<String, Map<String, Object>> packageAttrs = new LinkedHashMap<>();
+        for (Map<String, Object> attr : copyableAttrs) {
+            String canonicalId = canonicalPackageAttrId(String.valueOf(attr.get("id")));
+            if (canonicalId == null) {
+                regularAttrs.add(attr);
+                continue;
+            }
+            packageAttrs.putIfAbsent(canonicalId, canonicalPackageAttr(attr, canonicalId));
+        }
+
         for (JsonNode attr : itemAttrs) {
             String id = attr.path("id").asText("");
-            if (!PACKAGE_ANY_IDS.contains(id) || !existing.add(id)) continue;
+            String canonicalId = canonicalPackageAttrId(id);
+            if (canonicalId == null || packageAttrs.containsKey(canonicalId)) continue;
             Map<String, Object> clean = new LinkedHashMap<>();
-            clean.put("id", id);
+            clean.put("id", canonicalId);
+            clean.put("name", packageAttrName(canonicalId));
             clean.put("value_name", attr.path("value_name").asText(null));
             clean.put("value_struct", attr.hasNonNull("value_struct") ? jsonToObject(attr.get("value_struct")) : null);
-            copyableAttrs.add(clean);
+            packageAttrs.put(canonicalId, clean);
         }
+
+        copyableAttrs.clear();
+        copyableAttrs.addAll(regularAttrs);
+        copyableAttrs.addAll(packageAttrs.values());
+    }
+
+    private static Map<String, Object> canonicalPackageAttr(Map<String, Object> source, String canonicalId) {
+        Map<String, Object> normalized = new LinkedHashMap<>(source);
+        normalized.put("id", canonicalId);
+        normalized.put("name", packageAttrName(canonicalId));
+        return normalized;
+    }
+
+    private static String canonicalPackageAttrId(String id) {
+        if (id == null) return null;
+        return switch (id.toUpperCase(Locale.ROOT)) {
+            case "PACKAGE_HEIGHT", "SELLER_PACKAGE_HEIGHT" -> "seller_package_height";
+            case "PACKAGE_WIDTH", "SELLER_PACKAGE_WIDTH" -> "seller_package_width";
+            case "PACKAGE_LENGTH", "SELLER_PACKAGE_LENGTH" -> "seller_package_length";
+            case "PACKAGE_WEIGHT", "SELLER_PACKAGE_WEIGHT" -> "seller_package_weight";
+            default -> null;
+        };
+    }
+
+    private static String packageAttrName(String canonicalId) {
+        return switch (canonicalId) {
+            case "seller_package_height" -> "Altura da embalagem";
+            case "seller_package_width" -> "Largura da embalagem";
+            case "seller_package_length" -> "Comprimento da embalagem";
+            case "seller_package_weight" -> "Peso da embalagem";
+            default -> canonicalId;
+        };
     }
 
     private List<JsonNode> parseShippingDimensions(String raw) {

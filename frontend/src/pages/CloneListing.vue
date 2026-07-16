@@ -80,6 +80,35 @@ const PACKAGE_ATTR_IDS = new Set([
   "SELLER_PACKAGE_LENGTH", "SELLER_PACKAGE_WEIGHT",
 ]);
 
+function canonicalPackageAttrId(id: string): string | null {
+  switch (id.toUpperCase()) {
+    case "PACKAGE_HEIGHT":
+    case "SELLER_PACKAGE_HEIGHT":
+      return "seller_package_height";
+    case "PACKAGE_WIDTH":
+    case "SELLER_PACKAGE_WIDTH":
+      return "seller_package_width";
+    case "PACKAGE_LENGTH":
+    case "SELLER_PACKAGE_LENGTH":
+      return "seller_package_length";
+    case "PACKAGE_WEIGHT":
+    case "SELLER_PACKAGE_WEIGHT":
+      return "seller_package_weight";
+    default:
+      return null;
+  }
+}
+
+function packageAttrName(id: string): string {
+  switch (id) {
+    case "seller_package_height": return "Altura da embalagem";
+    case "seller_package_width": return "Largura da embalagem";
+    case "seller_package_length": return "Comprimento da embalagem";
+    case "seller_package_weight": return "Peso da embalagem";
+    default: return id;
+  }
+}
+
 const packageAttrs = computed(() => editableAttrs.value.filter((a) => PACKAGE_ATTR_IDS.has(a.id)));
 const regularAttrs = computed(() => editableAttrs.value.filter((a) => !PACKAGE_ATTR_IDS.has(a.id)));
 // Separa os atributos (fora medidas) em obrigatórios x demais, pela tag da categoria.
@@ -289,7 +318,22 @@ async function fetchPreview() {
       if (id) origAttrsById[id] = { value_struct: a.value_struct as { number: number; unit: string } | null };
     }
 
-    editableAttrs.value = s.attributes.map((a) => {
+    const normalizedSuggestedAttrs = Array.from(
+      s.attributes.reduce((attrs, attr) => {
+        const canonicalId = canonicalPackageAttrId(attr.id);
+        const id = canonicalId || attr.id;
+        if (!attrs.has(id)) {
+          attrs.set(id, {
+            ...attr,
+            id,
+            name: canonicalId ? packageAttrName(canonicalId) : attr.name,
+          });
+        }
+        return attrs;
+      }, new Map<string, (typeof s.attributes)[number]>()).values()
+    );
+
+    editableAttrs.value = normalizedSuggestedAttrs.map((a) => {
       const def = defById[a.id];
       const base: EditableAttr = {
         id: a.id,
@@ -306,7 +350,7 @@ async function fetchPreview() {
       };
       if (def?.value_type === "number_unit") {
         const fromOrig = origAttrsById[a.id];
-        const merged = { ...a, value_struct: fromOrig?.value_struct ?? undefined };
+        const merged = { ...a, value_struct: fromOrig?.value_struct ?? a.value_struct ?? undefined };
         const { number, unit } = parseNumUnit(merged, def);
         base.numberValue = number;
         base.unitValue = unit;
