@@ -140,8 +140,24 @@ public class MeliClient {
         return request(HttpMethod.POST, path, userId, body);
     }
 
+    public MeliResponse post(String path, Map<String, String> params, Long userId, Object body) {
+        return request(HttpMethod.POST, withQuery(path, params), userId, body);
+    }
+
     public MeliResponse delete(String path, Long userId) {
         return request(HttpMethod.DELETE, path, userId, null);
+    }
+
+    public MeliResponse delete(String path, Map<String, String> params, Long userId) {
+        return request(HttpMethod.DELETE, withQuery(path, params), userId, null);
+    }
+
+    public MeliResponse delete(String path, Long userId, Object body) {
+        return request(HttpMethod.DELETE, path, userId, body);
+    }
+
+    public MeliResponse delete(String path, Map<String, String> params, Long userId, Object body) {
+        return request(HttpMethod.DELETE, withQuery(path, params), userId, body);
     }
 
     /** GET sem autenticação (dados públicos) com User-Agent de navegador. */

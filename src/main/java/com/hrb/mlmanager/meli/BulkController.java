@@ -58,6 +58,22 @@ public class BulkController {
             String sku,
             @JsonProperty("batch_id") String batchId) {}
 
+    public record BulkPositionsUpdate(
+            List<AccountItems> groups,
+            List<Map<String, Object>> positions,
+            String sku,
+            @JsonProperty("batch_id") String batchId) {}
+
+    public record BulkCompatibilitiesUpdate(
+            List<AccountItems> groups,
+            @JsonProperty("product_ids") List<String> productIds,
+            String mode,
+            String sku,
+            @JsonProperty("vehicle_names") List<String> vehicleNames,
+            List<String> notes,
+            List<Map<String, Object>> positions,
+            @JsonProperty("batch_id") String batchId) {}
+
     @GetMapping("/skus")
     public List<Map<String, Object>> listSkus() {
         return service.getSkus(auth.requireActiveAccountId());
@@ -134,26 +150,42 @@ public class BulkController {
 
     @GetMapping("/compatibilities/from-ref")
     public Map<String, Object> getCompatibilitiesFromRef(@RequestParam String ref) {
-        throw new ResponseStatusException(HttpStatus.NOT_IMPLEMENTED,
-                "Leitura de compatibilidades ainda nao foi portada para o backend Java.");
+        if (ref == null || ref.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "ref e obrigatorio");
+        }
+        return service.getCompatibilitiesFromRef(ref);
     }
 
     @GetMapping("/compatibilities/item/{itemId}")
     public Map<String, Object> getItemCompatibilities(@PathVariable String itemId) {
-        throw new ResponseStatusException(HttpStatus.NOT_IMPLEMENTED,
-                "Leitura de compatibilidades ainda nao foi portada para o backend Java.");
+        return service.getItemCompatibilitiesWithPositions(itemId, auth.requireActiveAccountId());
     }
 
     @PostMapping("/compatibilities/update")
-    public Map<String, Object> bulkUpdateCompatibilities() {
-        throw new ResponseStatusException(HttpStatus.NOT_IMPLEMENTED,
-                "Compatibilidades ainda nao foram portadas para o backend Java.");
+    public Map<String, Object> bulkUpdateCompatibilities(@RequestBody BulkCompatibilitiesUpdate body,
+                                                         HttpServletRequest request) {
+        security.require(request, "bulk_edit");
+        if (body.groups() == null || body.groups().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "groups nao pode ser vazio");
+        }
+        if (body.productIds() == null || body.productIds().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "product_ids nao pode ser vazio");
+        }
+        return service.bulkUpdateCompatibilities(groups(body.groups()), body.productIds(), body.mode(),
+                body.sku(), body.vehicleNames(), body.notes(), body.positions(), body.batchId());
     }
 
     @PostMapping("/positions/update")
-    public Map<String, Object> bulkUpdatePositions() {
-        throw new ResponseStatusException(HttpStatus.NOT_IMPLEMENTED,
-                "Posicoes ainda nao foram portadas para o backend Java.");
+    public Map<String, Object> bulkUpdatePositions(@RequestBody BulkPositionsUpdate body,
+                                                   HttpServletRequest request) {
+        security.require(request, "bulk_edit");
+        if (body.groups() == null || body.groups().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "groups nao pode ser vazio");
+        }
+        if (body.positions() == null || body.positions().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "positions nao pode ser vazio");
+        }
+        return service.bulkUpdatePositions(groups(body.groups()), body.positions(), body.sku(), body.batchId());
     }
 
     private static ObjectNode objectUpdates(JsonNode updates) {
