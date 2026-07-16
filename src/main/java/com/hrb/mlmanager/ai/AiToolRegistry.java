@@ -73,6 +73,23 @@ public class AiToolRegistry {
         return out;
     }
 
+    /** Catálogo administrativo somente leitura das ferramentas reais do agente. */
+    public List<Map<String, Object>> adminCatalog() {
+        List<Map<String, Object>> out = new java.util.ArrayList<>();
+        for (JsonNode tool : TOOL_DEFINITIONS) {
+            JsonNode function = tool.path("function");
+            String name = function.path("name").asText();
+            Map<String, Object> item = new java.util.LinkedHashMap<>();
+            item.put("name", name);
+            item.put("description", function.path("description").asText(""));
+            item.put("write", isWriteTool(name));
+            item.put("permission", TOOL_PERMISSION.get(name));
+            item.put("parameters", function.path("parameters"));
+            out.add(item);
+        }
+        return out;
+    }
+
     /** Executa tool de leitura; retorno já serializado e truncado (vai como tool result). */
     public String executeRead(String name, JsonNode args) {
         Object result = switch (name) {

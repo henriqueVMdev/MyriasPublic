@@ -20,6 +20,14 @@ public class AiModelSettingsService {
         return openRouter.availableModels();
     }
 
+    public List<OpenRouterClient.ModelInfo> allModels() {
+        return openRouter.allModels();
+    }
+
+    public List<OpenRouterClient.ModelInfo> refreshModels() {
+        return openRouter.refreshModels();
+    }
+
     @Transactional(readOnly = true)
     public String currentModel() {
         String configured = repository.findById(AiModelSetting.SINGLETON_ID)

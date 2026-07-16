@@ -2,8 +2,10 @@ package com.hrb.mlmanager.ai;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -14,24 +16,19 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
-/**
- * Cliente do OpenRouter (API compatível com OpenAI chat/completions).
- * Mesmo estilo do MeliClient: síncrono, resposta crua em JsonNode.
- * Erros HTTP viram OpenRouterException com mensagem amigável (vai pro chat).
- */
+/** Cliente síncrono do OpenRouter para chat e catálogo de modelos. */
 @Component
 public class OpenRouterClient {
 
     private static final Logger log = LoggerFactory.getLogger(OpenRouterClient.class);
+    private static final Duration CATALOG_CACHE_TTL = Duration.ofMinutes(15);
 
     private final RestClient http;
     private final String apiKey;
     private final String defaultModel;
     private final List<String> models;
-    private volatile List<ModelOption> catalogCache = List.of();
+    private volatile List<ModelInfo> catalogCache = List.of();
     private volatile Instant catalogCacheAt = Instant.EPOCH;
-
-    private static final Duration CATALOG_CACHE_TTL = Duration.ofMinutes(10);
 
     public OpenRouterClient(RestClient openRouterRestClient,
                             @Value("${openrouter.api-key:}") String apiKey,
@@ -49,13 +46,40 @@ public class OpenRouterClient {
 
     public record ModelOption(String id, String name) {}
 
+    public record ModelInfo(
+            String id,
+            String name,
+            String description,
+            long created,
+            int contextLength,
+            Map<String, String> pricing,
+            List<String> supportedParameters,
+            List<String> inputModalities,
+            List<String> outputModalities,
+            String tokenizer,
+            String instructType,
+            Integer maxCompletionTokens,
+            String knowledgeCutoff,
+            JsonNode defaultParameters,
+            boolean free,
+            boolean toolCompatible) {}
+
     /**
-     * Catálogo dinâmico de modelos de texto com suporte a tools. Se a consulta
-     * falhar, mantém os modelos configurados em OPENROUTER_MODELS.
+     * Modelos utilizáveis pelo agente atual, que depende de function calling.
+     * O painel administrativo usa {@link #allModels()} para mostrar o catálogo
+     * completo, inclusive modelos incompatíveis.
      */
     public List<ModelOption> availableModels() {
+        return allModels().stream()
+                .filter(ModelInfo::toolCompatible)
+                .map(model -> new ModelOption(model.id(), model.name()))
+                .toList();
+    }
+
+    /** Catálogo completo do OpenRouter, com metadados e preços. */
+    public List<ModelInfo> allModels() {
         Instant now = Instant.now();
-        List<ModelOption> cached = catalogCache;
+        List<ModelInfo> cached = catalogCache;
         if (!cached.isEmpty() && now.isBefore(catalogCacheAt.plus(CATALOG_CACHE_TTL))) {
             return cached;
         }
@@ -64,53 +88,130 @@ public class OpenRouterClient {
             if (!catalogCache.isEmpty() && now.isBefore(catalogCacheAt.plus(CATALOG_CACHE_TTL))) {
                 return catalogCache;
             }
-            List<ModelOption> loaded = fetchAvailableModels();
+            List<ModelInfo> loaded = fetchAllModels();
             catalogCache = loaded;
             catalogCacheAt = now;
             return loaded;
         }
     }
 
-    /** Modelo pedido pelo widget se estiver na lista; senão o default. */
+    public List<ModelInfo> refreshModels() {
+        synchronized (this) {
+            catalogCache = List.of();
+            catalogCacheAt = Instant.EPOCH;
+        }
+        return allModels();
+    }
+
+    /** Compatibilidade com chamadas antigas que aceitavam um modelo do cliente. */
     public String resolveModel(String requested) {
         return requested != null && models.contains(requested) ? requested : defaultModel;
     }
 
     private record Result(int status, JsonNode body) {}
 
-    private List<ModelOption> fetchAvailableModels() {
-        Map<String, ModelOption> found = new LinkedHashMap<>();
-        if (apiKey != null && !apiKey.isBlank()) {
-            try {
-                Result resp = http.get()
-                        .uri("/models?supported_parameters=tools&output_modalities=text&sort=most-popular")
-                        .header("Authorization", "Bearer " + apiKey)
-                        .exchange((req, res) ->
-                                new Result(res.getStatusCode().value(), readJson(res)), false);
-                if (resp.status() == 200 && resp.body() != null) {
-                    for (JsonNode model : resp.body().path("data")) {
-                        String id = model.path("id").asText("");
-                        if (id.isBlank()) continue;
-                        String name = model.path("name").asText(id);
-                        found.putIfAbsent(id, new ModelOption(id, name));
-                    }
-                } else {
-                    log.warn("OpenRouter models retornou {}: {}", resp.status(), resp.body());
+    private List<ModelInfo> fetchAllModels() {
+        Map<String, ModelInfo> found = new LinkedHashMap<>();
+        try {
+            Result resp = http.get()
+                    .uri("/models?output_modalities=all&sort=most-popular")
+                    .headers(headers -> {
+                        if (apiKey != null && !apiKey.isBlank()) {
+                            headers.setBearerAuth(apiKey);
+                        }
+                    })
+                    .exchange((req, res) ->
+                            new Result(res.getStatusCode().value(), readJson(res)), false);
+            if (resp.status() == 200 && resp.body() != null) {
+                for (JsonNode model : resp.body().path("data")) {
+                    ModelInfo parsed = parseModel(model);
+                    if (parsed != null) found.putIfAbsent(parsed.id(), parsed);
                 }
-            } catch (Exception e) {
-                log.warn("Falha carregando catálogo de modelos OpenRouter: {}", e.getMessage());
+            } else {
+                log.warn("OpenRouter models retornou {}: {}", resp.status(), resp.body());
             }
+        } catch (Exception e) {
+            log.warn("Falha carregando catálogo de modelos OpenRouter: {}", e.getMessage());
         }
 
+        // Mantém o app operável se o catálogo externo estiver indisponível.
         for (String id : models) {
-            if (id != null && !id.isBlank()) {
-                found.putIfAbsent(id, new ModelOption(id, id));
-            }
+            if (id != null && !id.isBlank()) found.putIfAbsent(id, fallbackModel(id));
         }
         if (defaultModel != null && !defaultModel.isBlank()) {
-            found.putIfAbsent(defaultModel, new ModelOption(defaultModel, defaultModel));
+            found.putIfAbsent(defaultModel, fallbackModel(defaultModel));
         }
         return List.copyOf(found.values());
+    }
+
+    private static ModelInfo parseModel(JsonNode model) {
+        String id = model.path("id").asText("");
+        if (id.isBlank()) return null;
+
+        JsonNode architecture = model.path("architecture");
+        Map<String, String> pricing = new LinkedHashMap<>();
+        model.path("pricing").fields().forEachRemaining(entry ->
+                pricing.put(entry.getKey(), entry.getValue().asText("")));
+        List<String> supported = textList(model.path("supported_parameters"));
+        List<String> inputs = textList(architecture.path("input_modalities"));
+        List<String> outputs = textList(architecture.path("output_modalities"));
+        boolean free = id.endsWith(":free")
+                || (isZero(pricing.get("prompt"))
+                    && isZero(pricing.get("completion"))
+                    && isZero(pricing.get("request")));
+        boolean toolCompatible = supported.contains("tools") && outputs.contains("text");
+
+        JsonNode defaultParameters = model.path("default_parameters");
+        if (defaultParameters.isMissingNode() || defaultParameters.isNull()) {
+            defaultParameters = null;
+        } else {
+            defaultParameters = defaultParameters.deepCopy();
+        }
+        JsonNode maxCompletion = model.path("top_provider").path("max_completion_tokens");
+
+        return new ModelInfo(
+                id,
+                model.path("name").asText(id),
+                model.path("description").asText(""),
+                model.path("created").asLong(0),
+                model.path("context_length").asInt(0),
+                Map.copyOf(pricing),
+                List.copyOf(supported),
+                List.copyOf(inputs),
+                List.copyOf(outputs),
+                architecture.path("tokenizer").asText(""),
+                architecture.path("instruct_type").asText(""),
+                maxCompletion.isNumber() ? maxCompletion.asInt() : null,
+                model.path("knowledge_cutoff").asText(""),
+                defaultParameters,
+                free,
+                toolCompatible);
+    }
+
+    private static ModelInfo fallbackModel(String id) {
+        return new ModelInfo(id, id, "Modelo configurado localmente.", 0, 0,
+                Map.of(), List.of("tools"), List.of("text"), List.of("text"),
+                "", "", null, "", null, id.endsWith(":free"), true);
+    }
+
+    private static List<String> textList(JsonNode node) {
+        List<String> values = new ArrayList<>();
+        if (node.isArray()) {
+            for (JsonNode value : node) {
+                String text = value.asText("");
+                if (!text.isBlank()) values.add(text);
+            }
+        }
+        return values;
+    }
+
+    private static boolean isZero(String value) {
+        if (value == null || value.isBlank()) return true;
+        try {
+            return new BigDecimal(value).compareTo(BigDecimal.ZERO) == 0;
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 
     public JsonNode chat(ObjectNode payload) {
