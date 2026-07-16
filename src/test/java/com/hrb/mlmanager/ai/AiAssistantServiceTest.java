@@ -24,6 +24,8 @@ class AiAssistantServiceTest {
     private AiToolRegistry tools;
     private PendingActionStore pendingActions;
     private MeliAuthService meliAuth;
+    private AiCustomizationService customization;
+    private AiAuditService audit;
     private AiAssistantService service;
     private AppUser user;
 
@@ -34,7 +36,12 @@ class AiAssistantServiceTest {
         tools = mock(AiToolRegistry.class);
         pendingActions = new PendingActionStore(Duration.ofMinutes(10));
         meliAuth = mock(MeliAuthService.class);
-        service = new AiAssistantService(openRouter, modelSettings, tools, pendingActions, meliAuth);
+        customization = mock(AiCustomizationService.class);
+        when(customization.promptContext()).thenReturn("");
+        // Auditoria real com repositório mockado: o Tracker é package-private.
+        audit = new AiAuditService(mock(AiCommandLogRepository.class));
+        service = new AiAssistantService(openRouter, modelSettings, tools, pendingActions,
+                meliAuth, customization, audit);
 
         user = mock(AppUser.class);
         when(user.getId()).thenReturn(1L);

@@ -67,6 +67,8 @@ public class AiAssistantService {
                 ObjectNode payload = MAPPER.createObjectNode();
                 payload.put("model", model);
                 payload.put("user", String.valueOf(user.getId()));
+                // Sem isso o OpenRouter não devolve usage.cost e a auditoria fica em $0.
+                payload.set("usage", MAPPER.createObjectNode().put("include", true));
                 payload.set("messages", messages);
                 if (!toolDefs.isEmpty()) payload.set("tools", toolDefs);
 

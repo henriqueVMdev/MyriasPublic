@@ -85,13 +85,18 @@ class OpenRouterClientTest {
     void carregaCatalogoDinamicoSomenteComModelosDeTools() {
         Fixture f = fixture("test-key");
         f.server().expect(requestTo(
-                        "https://openrouter.ai/api/v1/models"
-                                + "?supported_parameters=tools&output_modalities=text&sort=most-popular"))
+                        "https://openrouter.ai/api/v1/models?output_modalities=all&sort=most-popular"))
                 .andExpect(header("Authorization", "Bearer test-key"))
                 .andRespond(withSuccess("""
                         {"data":[
-                          {"id":"x/modelo-1","name":"Modelo Um"},
-                          {"id":"y/modelo-2","name":"Modelo Dois"}
+                          {"id":"x/modelo-1","name":"Modelo Um",
+                           "supported_parameters":["tools"],
+                           "architecture":{"output_modalities":["text"]}},
+                          {"id":"y/modelo-2","name":"Modelo Dois",
+                           "supported_parameters":["tools"],
+                           "architecture":{"output_modalities":["text"]}},
+                          {"id":"z/sem-tools","name":"Sem Tools",
+                           "architecture":{"output_modalities":["text"]}}
                         ]}
                         """, MediaType.APPLICATION_JSON));
 
@@ -100,12 +105,20 @@ class OpenRouterClientTest {
         assertEquals("x/modelo-1", models.get(0).id());
         assertEquals("Modelo Um", models.get(0).name());
         assertEquals("y/modelo-2", models.get(1).id());
+        // Sem suporte a tools não pode ser usado pelo agente...
+        assertTrue(models.stream().noneMatch(m -> m.id().equals("z/sem-tools")));
+        // ...mas continua visível no catálogo completo do painel admin.
+        assertTrue(f.client().allModels().stream().anyMatch(m -> m.id().equals("z/sem-tools")));
         f.server().verify();
     }
 
     @Test
     void catalogoUsaConfiguracaoComoFallbackSemApiKey() {
         Fixture f = fixture("");
+        // O endpoint público é consultado mesmo sem api key; se falhar, cai no fallback local.
+        f.server().expect(requestTo(
+                        "https://openrouter.ai/api/v1/models?output_modalities=all&sort=most-popular"))
+                .andRespond(withStatus(HttpStatus.INTERNAL_SERVER_ERROR).body("{}"));
 
         List<OpenRouterClient.ModelOption> models = f.client().availableModels();
 

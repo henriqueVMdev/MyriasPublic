@@ -128,6 +128,12 @@ const router = createRouter({
           component: () => import("@/pages/Users.vue"),
           meta: { admin: true },
         },
+        {
+          path: "ia",
+          name: "ai-agents",
+          component: () => import("@/pages/AiAgents.vue"),
+          meta: { admin: true },
+        },
       ],
     },
   ],
