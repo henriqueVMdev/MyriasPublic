@@ -57,6 +57,30 @@ class MeliCloneCatalogPreviewTest {
         }
     }
 
+    @Test
+    void informaQuandoNaoHaContaDoMercadoLivreConectada() {
+        StubClient client = new StubClient();
+        MeliAuthService auth = mock(MeliAuthService.class);
+        when(auth.listAccounts()).thenReturn(List.of());
+
+        MeliCloneService service = new MeliCloneService(
+                client,
+                auth,
+                mock(MeliBulkService.class),
+                mock(OperationLogRepository.class)
+        );
+
+        try {
+            Exception error = org.junit.jupiter.api.Assertions.assertThrows(
+                    IllegalStateException.class,
+                    () -> service.preview("MLBU1975747175")
+            );
+            assertTrue(error.getMessage().contains("Nenhuma conta do Mercado Livre"));
+        } finally {
+            client.close();
+        }
+    }
+
     private static final class StubClient extends MeliClient {
         StubClient() {
             super(mock(MeliAuthService.class), new MeliRateLimiter(60_000, 10), 1);

@@ -33,19 +33,22 @@ public class CloneController {
     public record PreviewRequest(@JsonProperty("item_id") String itemId) {}
 
     @PostMapping("/preview")
-    public Map<String, Object> preview(@RequestBody PreviewRequest body) {
-        if (body.itemId() == null || body.itemId().isBlank()) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "item_id e obrigatorio");
+    public ResponseEntity<?> preview(@RequestBody PreviewRequest body) {
+        if (body == null || body.itemId() == null || body.itemId().isBlank()) {
+            return error(HttpStatus.UNPROCESSABLE_ENTITY, "item_id e obrigatorio");
         }
         try {
-            return service.preview(body.itemId());
+            return ResponseEntity.ok(service.preview(body.itemId()));
+        } catch (ResponseStatusException e) {
+            String message = e.getReason();
+            if (message == null || message.isBlank()) message = e.getMessage();
+            return error(HttpStatus.valueOf(e.getStatusCode().value()), message);
         } catch (Exception e) {
             String message = e.getMessage();
             if (message == null || message.isBlank()) {
                 message = "Nao foi possivel obter o anuncio. Verifique o link/ID e tente novamente.";
             }
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    message, e);
+            return error(HttpStatus.BAD_REQUEST, message);
         }
     }
 
@@ -120,5 +123,12 @@ public class CloneController {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "user_ids nao pode ser vazio");
         }
         return out;
+    }
+
+    private static ResponseEntity<Map<String, String>> error(HttpStatus status, String message) {
+        String detail = message == null || message.isBlank()
+                ? "Erro ao processar a solicitacao."
+                : message;
+        return ResponseEntity.status(status).body(Map.of("detail", detail));
     }
 }

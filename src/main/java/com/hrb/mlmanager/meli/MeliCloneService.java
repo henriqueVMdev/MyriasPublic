@@ -87,6 +87,12 @@ public class MeliCloneService {
 
     @Transactional(readOnly = true)
     public Map<String, Object> preview(String itemIdOrUrl) {
+        if (auth.listAccounts().isEmpty()) {
+            throw new IllegalStateException(
+                    "Nenhuma conta do Mercado Livre esta conectada. "
+                    + "Conecte a conta novamente pelo botao \"Conectar Mercado Livre\" "
+                    + "e tente copiar o anuncio de novo.");
+        }
         List<String> candidateIds = extractItemIds(itemIdOrUrl);
         PreviewItem previewItem = fetchPreviewItem(candidateIds);
         if (previewItem == null) {
