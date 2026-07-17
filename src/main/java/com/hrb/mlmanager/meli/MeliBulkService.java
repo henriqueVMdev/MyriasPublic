@@ -149,6 +149,23 @@ public class MeliBulkService {
         return out;
     }
 
+    /** Fotos atuais de um anúncio (id + url, em ordem) — usado pela tool da IA. */
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> getItemPictures(long userId, String itemId) {
+        MeliResponse resp = client.get("/items/" + itemId, Map.of("attributes", "pictures"), userId);
+        List<Map<String, Object>> out = new ArrayList<>();
+        JsonNode pics = resp.data() == null ? null : resp.data().path("pictures");
+        if (pics != null && pics.isArray()) {
+            for (JsonNode p : pics) {
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("id", p.path("id").asText());
+                m.put("url", p.path("secure_url").asText(p.path("url").asText("")));
+                out.add(m);
+            }
+        }
+        return out;
+    }
+
     @Transactional(readOnly = true)
     public List<JsonNode> getItemsBySku(long userId, String sku) {
         // União das duas buscas: seller_sku indexa o seller_custom_field e sku o

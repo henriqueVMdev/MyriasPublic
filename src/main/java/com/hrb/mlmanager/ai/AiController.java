@@ -28,15 +28,17 @@ public class AiController {
     private final PendingActionStore pendingActions;
     private final PanelSecurity security;
     private final AiModelSettingsService modelSettings;
+    private final AiAuditService audit;
 
     public AiController(AiAssistantService assistant, AiToolRegistry tools,
                         PendingActionStore pendingActions, PanelSecurity security,
-                        AiModelSettingsService modelSettings) {
+                        AiModelSettingsService modelSettings, AiAuditService audit) {
         this.assistant = assistant;
         this.tools = tools;
         this.pendingActions = pendingActions;
         this.security = security;
         this.modelSettings = modelSettings;
+        this.audit = audit;
     }
 
     public record ModelUpdate(String model) {}
@@ -74,7 +76,17 @@ public class AiController {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
                     "Sem permissão para esta ação (" + required + ").");
         }
-        Map<String, Object> result = tools.executeWrite(action.tool(), action.args());
+        // Execução confirmada também é auditada (custo $0 — não há chamada ao modelo).
+        AiAuditService.Tracker tracker = audit.begin(user,
+                "[ação confirmada] " + action.summary(), modelSettings.currentModel());
+        Map<String, Object> result;
+        try {
+            result = tools.executeWrite(action.tool(), action.args());
+        } catch (RuntimeException e) {
+            tracker.failure(e.getMessage());
+            throw e;
+        }
+        tracker.success("Executada: " + action.summary(), List.of("executou " + action.tool()));
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ok", true);
         out.put("summary", action.summary());

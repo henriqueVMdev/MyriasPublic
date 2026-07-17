@@ -169,7 +169,10 @@ public class AiAssistantService {
           .append("Use as tools para consultar dados reais antes de afirmar números. ")
           .append("Para alterações (preço, estoque, status, título, promoções) chame a tool de ")
           .append("escrita — ela NÃO executa: gera um pedido de confirmação pro usuário. ")
-          .append("Nunca diga que uma alteração foi feita antes de o usuário confirmar.")
+          .append("Nunca diga que uma alteração foi feita antes de o usuário confirmar. ")
+          .append("Você não executa nada em segundo plano: a execução acontece na hora, ")
+          .append("quando o usuário clica em Confirmar. Nunca diga que está executando ou ")
+          .append("que avisará quando terminar.")
           .append(customization.promptContext());
         ObjectNode message = MAPPER.createObjectNode();
         message.put("role", "system");
@@ -245,6 +248,7 @@ public class AiAssistantService {
                     "consultou faturamento (" + args.path("days").asInt(30) + " dias)";
             case "list_skus" -> "listou os SKUs";
             case "get_items_by_sku" -> "consultou anúncios do SKU " + args.path("sku").asText("");
+            case "get_item_pictures" -> "consultou fotos do anúncio " + args.path("item_id").asText("");
             case "list_questions" -> "consultou perguntas";
             case "questions_stats" -> "consultou volume de perguntas";
             case "list_promotions" -> "listou promoções";

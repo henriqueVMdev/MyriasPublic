@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
-import { Bot, X, Send, Loader2, Trash2, Search, Check, Info } from "lucide-vue-next";
+import { Bot, X, Send, Loader2, Trash2, Search, Check, Info, Paperclip, ImagePlus } from "lucide-vue-next";
 import { marked } from "marked";
 import { useAssistantStore } from "@/stores/assistant";
 import { useAuthStore } from "@/stores/auth";
+import { uploadPicture } from "@/api/items";
 
 // Links do modelo: só http(s), mailto, âncora ou caminho — derruba javascript:/data: etc.
 const SAFE_HREF = /^(https?:|mailto:|#|\/)/i;
@@ -25,6 +26,61 @@ const scrollArea = ref<HTMLElement | null>(null);
 
 const MAX_CHARS = 2000;
 const charCount = computed(() => draft.value.length);
+
+// Imagens anexadas: sobem pro Mercado Livre na hora e viram URL + id de foto,
+// que vão junto na mensagem — o agente usa em bulk_update_items (pictures).
+interface Attachment { id: string; url: string; name: string }
+const attachments = ref<Attachment[]>([]);
+const uploadingImages = ref(0);
+const uploadError = ref("");
+const dragging = ref(false);
+const fileInput = ref<HTMLInputElement | null>(null);
+
+async function addFiles(files: Iterable<File>) {
+  uploadError.value = "";
+  for (const file of files) {
+    if (!file.type.startsWith("image/")) continue;
+    uploadingImages.value++;
+    try {
+      const resp = await uploadPicture(file);
+      const url = resp.data?.variations?.[0]?.secure_url;
+      if (!resp.data?.id || !url) throw new Error("resposta sem id/url");
+      attachments.value.push({ id: resp.data.id, url, name: file.name });
+    } catch (e: any) {
+      uploadError.value =
+        "Falha ao enviar " + file.name + ": " +
+        (e?.response?.data?.detail || e?.message || "erro desconhecido");
+    } finally {
+      uploadingImages.value--;
+    }
+  }
+}
+
+function onDrop(e: DragEvent) {
+  dragging.value = false;
+  if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files);
+}
+
+function onPaste(e: ClipboardEvent) {
+  const files = Array.from(e.clipboardData?.items || [])
+    .filter((i) => i.kind === "file")
+    .map((i) => i.getAsFile())
+    .filter((f): f is File => !!f);
+  if (files.length) {
+    e.preventDefault();
+    addFiles(files);
+  }
+}
+
+function onPickFiles(e: Event) {
+  const input = e.target as HTMLInputElement;
+  if (input.files?.length) addFiles(input.files);
+  input.value = "";
+}
+
+function removeAttachment(index: number) {
+  attachments.value.splice(index, 1);
+}
 
 // Markdown seguro: escapa HTML do modelo ANTES do marked → nada de tag injetada.
 function escapeHtml(s: string): string {
@@ -64,9 +120,17 @@ function scrollToEnd() {
 watch(() => [store.entries.length, store.loading, store.pendingAction], scrollToEnd);
 
 async function submit() {
-  const text = draft.value;
-  if (!text.trim()) return;
+  let text = draft.value.trim();
+  if ((!text && attachments.value.length === 0) || uploadingImages.value > 0) return;
+  if (attachments.value.length > 0) {
+    const refs = attachments.value
+      .map((a, i) => `- imagem ${i + 1} (${a.name}): ${a.url} (picture_id: ${a.id})`)
+      .join("\n");
+    text = (text || "Enviei imagem(ns) para usar nas fotos de anúncios.")
+      + "\n\n[Imagens já hospedadas no Mercado Livre:\n" + refs + "]";
+  }
   draft.value = "";
+  attachments.value = [];
   await store.send(text);
 }
 
@@ -107,7 +171,19 @@ function onKeydown(e: KeyboardEvent) {
         class="relative flex flex-col h-[min(780px,calc(100vh-8rem))] rounded-3xl overflow-hidden
                bg-gradient-to-br from-zinc-800/90 to-zinc-900/95 border border-brand-yellow/40
                shadow-2xl backdrop-blur-3xl text-zinc-100"
+        @dragover.prevent="dragging = true"
+        @dragleave.self="dragging = false"
+        @drop.prevent="onDrop"
       >
+        <!-- Zona de drop -->
+        <div
+          v-if="dragging"
+          class="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-3xl
+                 bg-brand-yellow/15 border-2 border-dashed border-brand-yellow pointer-events-none"
+        >
+          <ImagePlus :size="36" class="text-brand-yellow" />
+          <p class="text-sm font-semibold text-brand-yellow">Solte as imagens aqui</p>
+        </div>
         <!-- Header -->
         <div class="flex items-center justify-between px-5 pt-4 pb-2">
           <div class="flex items-center gap-1.5">
@@ -180,56 +256,113 @@ function onKeydown(e: KeyboardEvent) {
             </div>
           </template>
 
-          <!-- Card de confirmação -->
+          <!-- Card de confirmação / execução -->
           <div
             v-if="store.pendingAction"
             class="rounded-2xl border-2 border-brand-yellow/70 bg-brand-yellow/10 p-3 text-sm"
           >
-            <p class="font-semibold mb-1 text-brand-yellow">Confirmar ação?</p>
-            <p class="mb-2 text-zinc-200">{{ store.pendingAction.summary }}</p>
-            <div class="flex gap-2">
-              <button
-                @click="store.confirm()"
-                :disabled="store.loading"
-                class="flex items-center gap-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-1.5 disabled:opacity-50"
-              >
-                <Check :size="14" /> Confirmar
-              </button>
-              <button
-                @click="store.reject()"
-                :disabled="store.loading"
-                class="rounded-lg bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-xs font-semibold px-3 py-1.5 disabled:opacity-50"
-              >
-                Cancelar
-              </button>
-            </div>
+            <!-- Executando a ação confirmada -->
+            <template v-if="store.executing">
+              <p class="font-semibold mb-1 text-brand-yellow flex items-center gap-2">
+                <Loader2 :size="15" class="animate-spin" /> Executando…
+              </p>
+              <p class="text-zinc-200">{{ store.pendingAction.summary }}</p>
+              <p class="text-xs text-zinc-400 mt-2">
+                Aplicando as alterações no Mercado Livre — o resultado aparece aqui ao terminar.
+              </p>
+            </template>
+            <!-- Aguardando confirmação -->
+            <template v-else>
+              <p class="font-semibold mb-1 text-brand-yellow">Confirmar ação?</p>
+              <p class="mb-2 text-zinc-200">{{ store.pendingAction.summary }}</p>
+              <div class="flex gap-2">
+                <button
+                  @click="store.confirm()"
+                  :disabled="store.loading"
+                  class="flex items-center gap-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-1.5 disabled:opacity-50"
+                >
+                  <Check :size="14" /> Confirmar
+                </button>
+                <button
+                  @click="store.reject()"
+                  :disabled="store.loading"
+                  class="rounded-lg bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-xs font-semibold px-3 py-1.5 disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </template>
           </div>
 
-          <!-- Pensando... -->
-          <div v-if="store.loading" class="flex items-center gap-2 text-xs text-zinc-500">
-            <Loader2 :size="14" class="animate-spin" /> pensando…
+          <!-- Pensando (consulta ao modelo) -->
+          <div v-if="store.loading && !store.executing" class="flex items-center gap-2 text-xs text-zinc-500">
+            <Loader2 :size="14" class="animate-spin" /> pensando e consultando dados…
           </div>
         </div>
 
         <!-- Input -->
         <div class="px-4 pb-4 pt-2">
+          <!-- Miniaturas das imagens anexadas -->
+          <div v-if="attachments.length || uploadingImages > 0" class="flex flex-wrap gap-2 mb-2">
+            <div
+              v-for="(att, i) in attachments"
+              :key="att.id"
+              class="relative group/att w-14 h-14 rounded-lg overflow-hidden border border-zinc-700"
+              :title="att.name"
+            >
+              <img :src="att.url" :alt="att.name" class="w-full h-full object-cover" />
+              <button
+                @click="removeAttachment(i)"
+                class="absolute top-0.5 right-0.5 p-0.5 rounded-full bg-black/70 opacity-0 group-hover/att:opacity-100 transition-opacity"
+                title="Remover"
+              >
+                <X :size="11" class="text-white" />
+              </button>
+            </div>
+            <div
+              v-if="uploadingImages > 0"
+              class="w-14 h-14 rounded-lg border border-dashed border-zinc-600 flex items-center justify-center"
+            >
+              <Loader2 :size="17" class="animate-spin text-zinc-500" />
+            </div>
+          </div>
+          <p v-if="uploadError" class="text-xs text-red-400 mb-2">{{ uploadError }}</p>
+
           <textarea
             v-model="draft"
             @keydown="onKeydown"
+            @paste="onPaste"
             rows="3"
             :maxlength="MAX_CHARS"
-            placeholder="O que você quer saber? Pergunte qualquer coisa sobre suas contas…"
+            placeholder="O que você quer saber? Pergunte, ou arraste imagens para usar nas fotos…"
             class="w-full px-3 py-2.5 rounded-2xl bg-zinc-800/50 border border-zinc-700/50 outline-none resize-none
                    text-sm leading-relaxed text-zinc-100 placeholder-zinc-500
                    focus:border-brand-yellow/50 transition-colors"
           />
           <div class="flex items-center justify-between mt-2">
-            <div class="text-xs font-medium text-zinc-500">
-              <span>{{ charCount }}</span>/<span class="text-zinc-400">{{ MAX_CHARS }}</span>
+            <div class="flex items-center gap-2">
+              <button
+                @click="fileInput?.click()"
+                class="p-2 rounded-lg border border-zinc-700/50 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 transition-colors"
+                title="Anexar imagens (ou arraste/cole no chat)"
+              >
+                <Paperclip :size="15" />
+              </button>
+              <input
+                ref="fileInput"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                multiple
+                class="hidden"
+                @change="onPickFiles"
+              />
+              <div class="text-xs font-medium text-zinc-500">
+                <span>{{ charCount }}</span>/<span class="text-zinc-400">{{ MAX_CHARS }}</span>
+              </div>
             </div>
             <button
               @click="submit"
-              :disabled="store.loading || !draft.trim()"
+              :disabled="store.loading || uploadingImages > 0 || (!draft.trim() && attachments.length === 0)"
               class="group relative p-3 rounded-xl cursor-pointer transition-all duration-300 transform
                      bg-gradient-to-r from-brand-yellow to-brand-yellow-light text-brand-black shadow-lg
                      hover:scale-110 hover:shadow-brand-yellow/40 hover:shadow-xl hover:-rotate-2

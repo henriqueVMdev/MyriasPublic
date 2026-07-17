@@ -104,6 +104,8 @@ public class AiToolRegistry {
                 yield skus.size() > MAX_SKUS ? skus.subList(0, MAX_SKUS) : skus;
             }
             case "get_items_by_sku" -> slimItemGroups(bulk.getItemsBySkuAllAccounts(requireText(args, "sku")));
+            case "get_item_pictures" -> bulk.getItemPictures(
+                    requireLong(args, "account_user_id"), requireText(args, "item_id"));
             case "list_questions" -> questions.listQuestions(args.path("status").asText("UNANSWERED"), 50, 7);
             case "questions_stats" -> questions.stats(args.path("period").asText("day"),
                     clamp(args.path("periods").asInt(30), 3, 60));
@@ -146,9 +148,14 @@ public class AiToolRegistry {
                 updates.fields().forEachRemaining(e -> {
                     if (!fields.isEmpty()) fields.append(", ");
                     JsonNode v = e.getValue();
-                    // asText() de objeto/array é "" — mostra o JSON pra não sumir do card
-                    fields.append(e.getKey()).append(" → ")
-                          .append(v.isValueNode() ? v.asText() : v.toString());
+                    if ("pictures".equals(e.getKey())) {
+                        // JSON cru das fotos poluiria o card — só a contagem importa
+                        fields.append("fotos → ").append(v.size()).append(" imagem(ns)");
+                    } else {
+                        // asText() de objeto/array é "" — mostra o JSON pra não sumir do card
+                        fields.append(e.getKey()).append(" → ")
+                              .append(v.isValueNode() ? v.asText() : v.toString());
+                    }
                 });
                 yield "Alterar " + items + " anúncio(s) em " + groups.size() + " conta(s): " + fields;
             }
@@ -206,7 +213,7 @@ public class AiToolRegistry {
     }
 
     private static final Set<String> ALLOWED_UPDATE_FIELDS =
-            Set.of("price", "available_quantity", "status", "title");
+            Set.of("price", "available_quantity", "status", "title", "pictures", "keep_cover_photo");
 
     private static ObjectNode sanitizeUpdates(JsonNode updates) {
         ObjectNode out = MAPPER.createObjectNode();
@@ -217,7 +224,7 @@ public class AiToolRegistry {
         }
         if (out.isEmpty()) {
             throw new IllegalArgumentException(
-                    "updates sem campos válidos (price, available_quantity, status, title)");
+                    "updates sem campos válidos (price, available_quantity, status, title, pictures)");
         }
         return out;
     }
@@ -313,12 +320,13 @@ public class AiToolRegistry {
       {"type":"function","function":{"name":"get_dashboard_revenue","description":"Faturamento por dia e por conta no período.","parameters":{"type":"object","properties":{"days":{"type":"integer","description":"janela em dias (1-90, default 30)"}}}}},
       {"type":"function","function":{"name":"list_skus","description":"SKUs de todas as contas com contagem de anúncios (máx. 100, ordenado por contagem).","parameters":{"type":"object","properties":{}}}},
       {"type":"function","function":{"name":"get_items_by_sku","description":"Anúncios de um SKU em todas as contas: id, título, preço, estoque, status, vendidos.","parameters":{"type":"object","properties":{"sku":{"type":"string"}},"required":["sku"]}}},
+      {"type":"function","function":{"name":"get_item_pictures","description":"Fotos atuais de um anúncio, em ordem (a primeira é a capa): id e url de cada foto. Use antes de alterar fotos.","parameters":{"type":"object","properties":{"account_user_id":{"type":"integer"},"item_id":{"type":"string"}},"required":["account_user_id","item_id"]}}},
       {"type":"function","function":{"name":"list_questions","description":"Perguntas de compradores de todas as contas.","parameters":{"type":"object","properties":{"status":{"type":"string","enum":["UNANSWERED","ANSWERED"],"description":"default UNANSWERED"}}}}},
       {"type":"function","function":{"name":"questions_stats","description":"Volume de perguntas por dia ou mês, por conta.","parameters":{"type":"object","properties":{"period":{"type":"string","enum":["day","month"]},"periods":{"type":"integer","description":"3-60"}}}}},
       {"type":"function","function":{"name":"list_promotions","description":"Promoções/campanhas de uma conta.","parameters":{"type":"object","properties":{"account_user_id":{"type":"integer"}},"required":["account_user_id"]}}},
       {"type":"function","function":{"name":"list_promotion_items","description":"Uma página de anúncios de uma promoção (candidate = elegíveis, started = participando).","parameters":{"type":"object","properties":{"account_user_id":{"type":"integer"},"promotion_id":{"type":"string"},"promotion_type":{"type":"string"},"status":{"type":"string","enum":["candidate","started"]}},"required":["account_user_id","promotion_id","promotion_type"]}}},
       {"type":"function","function":{"name":"get_operation_logs","description":"Últimas operações feitas no painel (auditoria).","parameters":{"type":"object","properties":{"limit":{"type":"integer","description":"1-50, default 20"}}}}},
-      {"type":"function","function":{"name":"bulk_update_items","description":"ALTERAÇÃO em massa de anúncios (preço, estoque, status active/paused, título). NÃO executa: gera um pedido de confirmação pro usuário.","parameters":{"type":"object","properties":{"groups":{"type":"array","items":{"type":"object","properties":{"user_id":{"type":"integer"},"item_ids":{"type":"array","items":{"type":"string"}}},"required":["user_id","item_ids"]}},"updates":{"type":"object","properties":{"price":{"type":"number"},"available_quantity":{"type":"integer"},"status":{"type":"string","enum":["active","paused"]},"title":{"type":"string"}}},"sku":{"type":"string","description":"SKU de referência, só pro histórico"}},"required":["groups","updates"]}}},
+      {"type":"function","function":{"name":"bulk_update_items","description":"ALTERAÇÃO em massa de anúncios (preço, estoque, status active/paused, título). NÃO executa: gera um pedido de confirmação pro usuário.","parameters":{"type":"object","properties":{"groups":{"type":"array","items":{"type":"object","properties":{"user_id":{"type":"integer"},"item_ids":{"type":"array","items":{"type":"string"}}},"required":["user_id","item_ids"]}},"updates":{"type":"object","properties":{"price":{"type":"number"},"available_quantity":{"type":"integer"},"status":{"type":"string","enum":["active","paused"]},"title":{"type":"string"},"pictures":{"type":"array","description":"substitui TODAS as fotos, na ordem enviada (a primeira vira capa); cada item é {\\"source\\":\\"url da imagem\\"} para foto nova ou {\\"id\\":\\"id de foto existente\\"} para manter/reordenar","items":{"type":"object"}},"keep_cover_photo":{"type":"boolean","description":"true mantém a capa atual de cada anúncio e insere as fotos enviadas depois dela"}}},"sku":{"type":"string","description":"SKU de referência, só pro histórico"}},"required":["groups","updates"]}}},
       {"type":"function","function":{"name":"add_items_to_promotion","description":"ALTERAÇÃO: inclui anúncios numa promoção (deal_price obrigatório em promoções tipo DEAL/LIGHTNING). Gera confirmação.","parameters":{"type":"object","properties":{"account_user_id":{"type":"integer"},"promotion_id":{"type":"string"},"promotion_type":{"type":"string"},"items":{"type":"array","items":{"type":"object","properties":{"item_id":{"type":"string"},"deal_price":{"type":"number"}},"required":["item_id"]}}},"required":["account_user_id","promotion_id","promotion_type","items"]}}},
       {"type":"function","function":{"name":"remove_items_from_promotion","description":"ALTERAÇÃO: remove anúncios de uma promoção. Gera confirmação.","parameters":{"type":"object","properties":{"account_user_id":{"type":"integer"},"promotion_id":{"type":"string"},"promotion_type":{"type":"string"},"item_ids":{"type":"array","items":{"type":"string"}}},"required":["account_user_id","promotion_id","promotion_type","item_ids"]}}}
     ]

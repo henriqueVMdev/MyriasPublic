@@ -103,6 +103,41 @@ class AiToolRegistryTest {
     }
 
     @Test
+    void getItemPicturesDespachaComContaEItem() {
+        when(bulk.getItemPictures(10L, "MLB1")).thenReturn(List.of(
+                Map.of("id", "PIC-1", "url", "https://http2.mlstatic.com/PIC-1.jpg")));
+        ObjectNode args = MAPPER.createObjectNode().put("account_user_id", 10L).put("item_id", "MLB1");
+        String out = registry.executeRead("get_item_pictures", args);
+        assertTrue(out.contains("PIC-1"), out);
+    }
+
+    @Test
+    void bulkAceitaPicturesEKeepCover() throws Exception {
+        var args = MAPPER.readTree("""
+            {"groups":[{"user_id":1,"item_ids":["MLB1"]}],
+             "updates":{"pictures":[{"source":"https://x/1.jpg"},{"id":"PIC-2"}],"keep_cover_photo":true}}
+            """);
+        when(bulk.bulkUpdateMultiAccount(anyList(), any(), isNull(), isNull(), isNull(), isNull()))
+                .thenReturn(Map.of("total", 1, "success", 1));
+        registry.executeWrite("bulk_update_items", args);
+        verify(bulk).bulkUpdateMultiAccount(anyList(),
+                argThat(updates -> updates.path("pictures").size() == 2
+                        && updates.path("keep_cover_photo").asBoolean()),
+                isNull(), isNull(), isNull(), isNull());
+    }
+
+    @Test
+    void summarizeMostraContagemDeFotosENaoJson() throws Exception {
+        var args = MAPPER.readTree("""
+            {"groups":[{"user_id":1,"item_ids":["MLB1","MLB2"]}],
+             "updates":{"pictures":[{"source":"https://x/1.jpg"},{"source":"https://x/2.jpg"},{"id":"PIC-3"}]}}
+            """);
+        String s = registry.summarize("bulk_update_items", args);
+        assertTrue(s.contains("fotos → 3 imagem(ns)"), s);
+        assertFalse(s.contains("https://"), s);
+    }
+
+    @Test
     void toolDesconhecidaLancaErro() {
         assertThrows(IllegalArgumentException.class,
                 () -> registry.executeRead("tool_inexistente", MAPPER.createObjectNode()));

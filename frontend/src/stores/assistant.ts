@@ -40,6 +40,8 @@ export const useAssistantStore = defineStore("assistant", () => {
   const pendingAction = ref<PendingAction | null>(null);
   const isOpen = ref(false);
   const loading = ref(false);
+  // true só enquanto uma ação confirmada roda no backend (widget mostra "executando")
+  const executing = ref(false);
 
   // Conversa sobrevive à navegação/F5, morre ao fechar a aba (sessionStorage).
   watch(
@@ -117,6 +119,7 @@ export const useAssistantStore = defineStore("assistant", () => {
     if (!pendingAction.value || loading.value) return;
     const action = pendingAction.value;
     loading.value = true;
+    executing.value = true;
     try {
       const resp = await confirmAction(action.id);
       entries.value.push({
@@ -138,6 +141,7 @@ export const useAssistantStore = defineStore("assistant", () => {
     } finally {
       pendingAction.value = null;
       loading.value = false;
+      executing.value = false;
     }
   }
 
@@ -166,6 +170,7 @@ export const useAssistantStore = defineStore("assistant", () => {
     pendingAction,
     isOpen,
     loading,
+    executing,
     ensureModels,
     selectModel,
     send,

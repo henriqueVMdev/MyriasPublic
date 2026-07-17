@@ -45,8 +45,9 @@ class AiControllerTest {
         when(user.getPermissions()).thenReturn(List.of("assistente")); // SEM bulk_edit
         when(security.require(any(), eq("assistente"))).thenReturn(user);
 
+        AiAuditService audit = new AiAuditService(mock(AiCommandLogRepository.class));
         mvc = MockMvcBuilders.standaloneSetup(
-                new AiController(assistant, tools, pendingActions, security, modelSettings)).build();
+                new AiController(assistant, tools, pendingActions, security, modelSettings, audit)).build();
     }
 
     @Test
