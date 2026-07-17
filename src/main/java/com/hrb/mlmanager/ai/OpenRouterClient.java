@@ -35,7 +35,8 @@ public class OpenRouterClient {
                             @Value("${openrouter.model}") String defaultModel,
                             @Value("${openrouter.models}") List<String> models) {
         this.http = openRouterRestClient;
-        this.apiKey = apiKey;
+        // Aspas e espaços vindos de .env/terminal quebrariam o Bearer com 401.
+        this.apiKey = apiKey == null ? "" : apiKey.strip().replaceAll("^[\"']+|[\"']+$", "");
         this.defaultModel = defaultModel;
         this.models = List.copyOf(models);
     }

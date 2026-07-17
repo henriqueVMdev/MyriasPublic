@@ -43,6 +43,16 @@ class OpenRouterClientTest {
     }
 
     @Test
+    void chaveComAspasEEspacosEHigienizada() throws Exception {
+        Fixture f = fixture(" \"test-key\" ");
+        f.server().expect(requestTo(URL))
+                .andExpect(header("Authorization", "Bearer test-key"))
+                .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
+        f.client().chat(MAPPER.createObjectNode());
+        f.server().verify();
+    }
+
+    @Test
     void erro402ViraMensagemAmigavel() {
         Fixture f = fixture("test-key");
         f.server().expect(requestTo(URL))
