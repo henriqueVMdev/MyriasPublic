@@ -73,6 +73,36 @@ class AiToolRegistryTest {
     }
 
     @Test
+    void getItemsBySkuEnxugaOsItensENaoTruncaListaGrande() throws Exception {
+        // 10 itens com payload completo do Meli (pictures/attributes/variations)
+        // estouravam MAX_RESULT_CHARS — o modelo via só os 2 primeiros.
+        List<com.fasterxml.jackson.databind.JsonNode> gordos = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            ObjectNode item = MAPPER.createObjectNode()
+                    .put("id", "MLB" + i)
+                    .put("title", "Anúncio " + i)
+                    .put("price", 1900.0)
+                    .put("available_quantity", 5)
+                    .put("sold_quantity", 3)
+                    .put("status", "active")
+                    .put("permalink", "https://produto.mercadolivre.com.br/MLB" + i);
+            item.set("pictures", MAPPER.readTree("[{\"url\":\"" + "x".repeat(2000) + "\"}]"));
+            item.set("attributes", MAPPER.readTree("[{\"id\":\"BRAND\",\"value_name\":\"" + "y".repeat(1000) + "\"}]"));
+            gordos.add(item);
+        }
+        when(bulk.getItemsBySkuAllAccounts("SKU-10")).thenReturn(List.of(
+                Map.of("user_id", 1L, "nickname", "LOJA", "items", gordos)));
+
+        String out = registry.executeRead("get_items_by_sku",
+                MAPPER.createObjectNode().put("sku", "SKU-10"));
+
+        assertFalse(out.contains("truncated"), "resultado não pode truncar: " + out.length());
+        for (int i = 0; i < 10; i++) assertTrue(out.contains("MLB" + i), "faltou MLB" + i);
+        assertFalse(out.contains("pictures"));
+        assertFalse(out.contains("permalink"));
+    }
+
+    @Test
     void toolDesconhecidaLancaErro() {
         assertThrows(IllegalArgumentException.class,
                 () -> registry.executeRead("tool_inexistente", MAPPER.createObjectNode()));

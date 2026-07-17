@@ -103,7 +103,7 @@ public class AiToolRegistry {
                 List<Map<String, Object>> skus = bulk.getSkusAllAccounts();
                 yield skus.size() > MAX_SKUS ? skus.subList(0, MAX_SKUS) : skus;
             }
-            case "get_items_by_sku" -> bulk.getItemsBySkuAllAccounts(requireText(args, "sku"));
+            case "get_items_by_sku" -> slimItemGroups(bulk.getItemsBySkuAllAccounts(requireText(args, "sku")));
             case "list_questions" -> questions.listQuestions(args.path("status").asText("UNANSWERED"), 50, 7);
             case "questions_stats" -> questions.stats(args.path("period").asText("day"),
                     clamp(args.path("periods").asInt(30), 3, 60));
@@ -235,6 +235,36 @@ public class AiToolRegistry {
             out.add(m);
         }
         if (out.isEmpty()) throw new IllegalArgumentException("groups vazio ou inválido");
+        return out;
+    }
+
+    /**
+     * Só os campos que a descrição da tool promete. O payload completo do Meli
+     * (pictures, attributes, variations…) estoura MAX_RESULT_CHARS e o truncamento
+     * cortava a lista no meio — o modelo via 2 itens de um SKU com 10.
+     */
+    private static List<Map<String, Object>> slimItemGroups(List<Map<String, Object>> groups) {
+        List<Map<String, Object>> out = new java.util.ArrayList<>();
+        for (Map<String, Object> group : groups) {
+            Map<String, Object> g = new java.util.LinkedHashMap<>(group);
+            List<Map<String, Object>> slim = new java.util.ArrayList<>();
+            if (g.get("items") instanceof List<?> items) {
+                for (Object o : items) {
+                    if (o instanceof JsonNode item) {
+                        Map<String, Object> m = new java.util.LinkedHashMap<>();
+                        m.put("id", item.path("id").asText());
+                        m.put("title", item.path("title").asText());
+                        m.put("price", item.path("price").asDouble());
+                        m.put("available_quantity", item.path("available_quantity").asInt());
+                        m.put("sold_quantity", item.path("sold_quantity").asInt());
+                        m.put("status", item.path("status").asText());
+                        slim.add(m);
+                    }
+                }
+            }
+            g.put("items", slim);
+            out.add(g);
+        }
         return out;
     }
 
