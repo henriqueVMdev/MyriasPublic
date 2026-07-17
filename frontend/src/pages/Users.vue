@@ -27,6 +27,7 @@ const PERM_LABELS: Record<string, string> = {
   perguntas: "Perguntas",
   mensagens: "Mensagens",
   atendimento_historico: "Histórico de Atendimento",
+  assistente: "Assistente de IA",
   delete_listing: "Excluir anúncio",
   bulk_edit: "Executar edição em massa",
   clone_listing: "Criar / copiar anúncio",
