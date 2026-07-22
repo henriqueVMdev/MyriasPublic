@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
-import { Swords, Loader2, Trophy, ExternalLink, Search } from "lucide-vue-next";
-import { getItemCompetition, type CompetitionAnalysis } from "@/api/competition";
+import { Swords, Loader2, Trophy, ExternalLink, Search, TrendingUp, Flame } from "lucide-vue-next";
+import {
+  getItemCompetition, getCategoryDiscovery,
+  type CompetitionAnalysis, type CategoryDiscovery,
+} from "@/api/competition";
 
 const props = defineProps<{ itemId: string }>();
 
@@ -9,6 +12,25 @@ const data = ref<CompetitionAnalysis | null>(null);
 const loading = ref(false);
 const error = ref("");
 const codeInput = ref("");
+
+// Descoberta de mercado (categoria) — carregada sob demanda.
+const discovery = ref<CategoryDiscovery | null>(null);
+const discoveryLoading = ref(false);
+const discoveryOpen = ref(false);
+
+async function toggleDiscovery() {
+  discoveryOpen.value = !discoveryOpen.value;
+  if (discoveryOpen.value && !discovery.value && data.value?.category_id) {
+    discoveryLoading.value = true;
+    try {
+      discovery.value = await getCategoryDiscovery(data.value.category_id);
+    } catch (e) {
+      console.error("Erro descoberta de mercado:", e);
+    } finally {
+      discoveryLoading.value = false;
+    }
+  }
+}
 
 async function load(code?: string) {
   loading.value = true;
@@ -253,5 +275,52 @@ onMounted(load);
         </div>
       </template>
     </template>
+
+    <!-- Descoberta de mercado (categoria): mais vendidos + termos em alta -->
+    <div v-if="data && data.category_id && data.mode !== 'not_found'" class="mt-4 pt-4 border-t dark:border-zinc-800">
+      <button @click="toggleDiscovery" class="text-sm font-medium text-meli-blue dark:text-brand-yellow flex items-center gap-1.5 hover:underline">
+        <TrendingUp :size="15" />
+        {{ discoveryOpen ? "Ocultar mercado da categoria" : "Ver mais vendidos e termos em alta da categoria" }}
+      </button>
+
+      <div v-if="discoveryOpen" class="mt-3">
+        <div v-if="discoveryLoading" class="flex items-center justify-center py-6">
+          <Loader2 :size="20" class="animate-spin text-meli-blue" />
+        </div>
+        <template v-else-if="discovery">
+          <!-- Termos em alta -->
+          <div v-if="discovery.trends.length" class="mb-4">
+            <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 flex items-center gap-1"><Flame :size="13" /> Termos em alta</div>
+            <div class="flex flex-wrap gap-1.5">
+              <a
+                v-for="t in discovery.trends" :key="t.keyword"
+                :href="t.url" target="_blank"
+                class="px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-zinc-800 hover:bg-gray-200 dark:hover:bg-zinc-700"
+              >{{ t.keyword }}</a>
+            </div>
+          </div>
+          <!-- Mais vendidos -->
+          <div v-if="discovery.best_sellers.length">
+            <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 flex items-center gap-1"><Trophy :size="13" /> Mais vendidos</div>
+            <div class="space-y-1">
+              <a
+                v-for="b in discovery.best_sellers" :key="b.id"
+                :href="b.permalink || `https://www.mercadolivre.com.br/anuncio/${b.id}`" target="_blank"
+                class="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-800/50"
+              >
+                <span class="w-5 text-xs text-gray-400 text-right shrink-0">{{ b.position }}º</span>
+                <img v-if="b.thumbnail" :src="b.thumbnail" alt="" class="w-8 h-8 rounded object-cover shrink-0" />
+                <span class="text-sm truncate flex-1">{{ b.title || b.id }}</span>
+                <span class="text-sm font-semibold tabular-nums shrink-0">{{ fmtPrice(b.price) }}</span>
+                <span class="text-xs text-gray-400 tabular-nums shrink-0 w-16 text-right">{{ (b.sold_quantity ?? 0).toLocaleString("pt-BR") }} vend.</span>
+              </a>
+            </div>
+          </div>
+          <div v-if="!discovery.trends.length && !discovery.best_sellers.length" class="text-sm text-gray-400 text-center py-4">
+            Sem dados de mercado para esta categoria.
+          </div>
+        </template>
+      </div>
+    </div>
   </div>
 </template>

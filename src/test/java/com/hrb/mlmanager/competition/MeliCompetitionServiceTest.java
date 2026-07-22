@@ -116,6 +116,19 @@ class MeliCompetitionServiceTest {
     }
 
     @Test
+    void parseHighlightIdsKeepsOrderAndFiltersNonItems() {
+        ObjectNode data = m.createObjectNode();
+        ArrayNode content = data.putArray("content");
+        content.addObject().put("type", "ITEM").put("id", "MLB1").put("position", 1);
+        content.addObject().put("type", "PRODUCT").put("id", "MLB-P").put("position", 2); // não é item
+        content.addObject().put("type", "ITEM").put("id", "MLB2").put("position", 3);
+
+        var ids = MeliCompetitionService.parseHighlightIds(data, 20);
+        assertEquals(java.util.List.of("MLB1", "MLB2"), ids);
+        assertEquals(1, MeliCompetitionService.parseHighlightIds(data, 1).size(), "respeita o limite");
+    }
+
+    @Test
     void extractCodesPrefersOemAndFiltersJunk() {
         ObjectNode item = m.createObjectNode();
         ArrayNode attrs = item.putArray("attributes");

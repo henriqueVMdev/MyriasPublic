@@ -116,6 +116,37 @@ export interface CompetitionFilters {
   limit?: number;
 }
 
+// ---------- descoberta de mercado (categoria) ----------
+
+export interface MarketTrend {
+  keyword: string;
+  url: string;
+}
+
+export interface BestSeller {
+  position: number;
+  id: string;
+  title?: string;
+  price?: number;
+  sold_quantity?: number;
+  thumbnail?: string | null;
+  permalink?: string | null;
+  seller_id?: number;
+}
+
+export interface CategoryDiscovery {
+  category_id: string;
+  trends: MarketTrend[];
+  best_sellers: BestSeller[];
+}
+
+export async function getCategoryDiscovery(categoryId: string): Promise<CategoryDiscovery> {
+  const { data } = await api.get<CategoryDiscovery>(
+    `/competition/category/${encodeURIComponent(categoryId)}`
+  );
+  return data;
+}
+
 export async function getCompetitionReport(filters: CompetitionFilters = {}): Promise<CompetitionReport> {
   const params = Object.fromEntries(
     Object.entries(filters).filter(([, value]) => value !== undefined && value !== "")

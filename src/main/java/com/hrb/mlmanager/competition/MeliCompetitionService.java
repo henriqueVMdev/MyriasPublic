@@ -290,6 +290,82 @@ public class MeliCompetitionService {
         return out;
     }
 
+    // ---------- descoberta de mercado (fase 4) ----------
+
+    private static final List<String> DISCOVERY_FIELDS = List.of(
+            "id", "title", "price", "sold_quantity", "thumbnail", "permalink", "seller_id");
+
+    /** Contexto de mercado da categoria: mais vendidos (highlights) + termos em alta (trends). */
+    public ObjectNode categoryDiscovery(long userId, String categoryId) {
+        ObjectNode out = M.createObjectNode();
+        out.put("category_id", categoryId);
+
+        ArrayNode trendsArr = out.putArray("trends");
+        try {
+            MeliResponse tr = client.get("/trends/MLB/" + categoryId, userId);
+            if (tr.status() == 200 && tr.data() != null && tr.data().isArray()) {
+                int n = 0;
+                for (JsonNode t : tr.data()) {
+                    String kw = t.path("keyword").asText("");
+                    if (kw.isBlank()) continue;
+                    trendsArr.addObject().put("keyword", kw).put("url", t.path("url").asText(""));
+                    if (++n >= 15) break;
+                }
+            } else {
+                log.warn("competition: /trends/MLB/{} user={} -> HTTP {}", categoryId, userId, tr.status());
+            }
+        } catch (Exception e) {
+            log.warn("competition: trends {} falhou: {}", categoryId, e.getMessage());
+        }
+
+        ArrayNode bestArr = out.putArray("best_sellers");
+        try {
+            MeliResponse hl = client.get("/highlights/MLB/category/" + categoryId, userId);
+            List<String> ids = parseHighlightIds(hl.status() == 200 ? hl.data() : null, 20);
+            if (!ids.isEmpty()) {
+                Map<String, JsonNode> byId = new LinkedHashMap<>();
+                for (JsonNode it : client.multiGetItems(ids, DISCOVERY_FIELDS, userId)) {
+                    byId.put(it.path("id").asText(""), it);
+                }
+                int pos = 0;
+                for (String id : ids) {
+                    JsonNode it = byId.get(id);
+                    ObjectNode row = bestArr.addObject();
+                    row.put("position", ++pos);
+                    row.put("id", id);
+                    if (it != null) {
+                        row.put("title", it.path("title").asText(""));
+                        row.put("price", it.path("price").asDouble(0));
+                        row.put("sold_quantity", it.path("sold_quantity").asInt(0));
+                        row.set("thumbnail", nullable(it.get("thumbnail")));
+                        row.set("permalink", nullable(it.get("permalink")));
+                        row.put("seller_id", it.path("seller_id").asLong(0));
+                    }
+                }
+            } else {
+                log.warn("competition: /highlights/MLB/category/{} user={} -> HTTP {}", categoryId, userId, hl.status());
+            }
+        } catch (Exception e) {
+            log.warn("competition: highlights {} falhou: {}", categoryId, e.getMessage());
+        }
+        return out;
+    }
+
+    /** Extrai os item ids da lista de destaques (só entradas do tipo ITEM), na ordem do ranking. */
+    static List<String> parseHighlightIds(JsonNode data, int limit) {
+        List<String> ids = new ArrayList<>();
+        if (data == null) return ids;
+        for (JsonNode c : data.path("content")) {
+            if (!"ITEM".equalsIgnoreCase(c.path("type").asText("ITEM"))) continue;
+            String id = c.path("id").asText("");
+            if (!id.isBlank()) {
+                ids.add(id);
+                if (ids.size() >= limit) break;
+            }
+        }
+        return ids;
+    }
+
     // ---------- snapshot por conta (varredura em background) ----------
 
     @Transactional(readOnly = true)

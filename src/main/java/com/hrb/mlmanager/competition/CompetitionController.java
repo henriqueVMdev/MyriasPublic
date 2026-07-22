@@ -111,6 +111,13 @@ public class CompetitionController {
         return svc.analyzeItem(userId, itemId, code);
     }
 
+    @GetMapping("/category/{categoryId}")
+    public ObjectNode categoryDiscovery(@PathVariable String categoryId, HttpServletRequest request) {
+        security.require(request, "concorrencia");
+        long userId = auth.requireActiveAccountId();
+        return svc.categoryDiscovery(userId, categoryId);
+    }
+
     // ---------- filtro/ordenação ----------
 
     private static List<JsonNode> filterRows(JsonNode items, String q, String status) {
