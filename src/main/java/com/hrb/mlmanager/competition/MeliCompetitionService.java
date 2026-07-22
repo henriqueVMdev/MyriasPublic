@@ -6,13 +6,20 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.hrb.mlmanager.meli.MeliClient;
 import com.hrb.mlmanager.meli.MeliClient.MeliResponse;
+import com.hrb.mlmanager.perf.PerfSnapshot;
+import com.hrb.mlmanager.perf.PerfSnapshotRepository;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Análise de concorrência dos anúncios. Fase 1: detalhe ao vivo por item para
@@ -28,11 +35,18 @@ public class MeliCompetitionService {
 
     private static final Logger log = LoggerFactory.getLogger(MeliCompetitionService.class);
     static final ObjectMapper M = new ObjectMapper();
+    static final String KIND = "competition";
+
+    private static final List<String> COMPETITION_FIELDS = List.of(
+            "id", "title", "price", "status", "thumbnail", "permalink",
+            "category_id", "catalog_product_id", "seller_custom_field");
 
     private final MeliClient client;
+    private final PerfSnapshotRepository repo;
 
-    public MeliCompetitionService(MeliClient client) {
+    public MeliCompetitionService(MeliClient client, PerfSnapshotRepository repo) {
         this.client = client;
+        this.repo = repo;
     }
 
     /** Detalhe ao vivo por item. Decide catálogo vs. avulso por catalog_product_id. */
@@ -61,11 +75,9 @@ public class MeliCompetitionService {
             return out;
         }
 
-        MeliResponse prod = client.get("/products/" + cpid, userId);
-        MeliResponse offersResp = client.get("/products/" + cpid + "/items", Map.of("limit", "50"), userId);
-        JsonNode offers = offersResp.data() == null ? null : offersResp.data().path("results");
-        if (offersResp.status() != 200 || offers == null || !offers.isArray()) {
-            log.warn("competition: /products/{}/items user={} -> HTTP {}", cpid, userId, offersResp.status());
+        ObjectNode analysis = fetchCatalogAnalysis(userId, cpid, itemId, myPrice);
+        if (analysis == null) {
+            log.warn("competition: /products/{}/items user={} sem ofertas", cpid, userId);
             ObjectNode out = M.createObjectNode();
             out.put("item_id", itemId);
             out.put("mode", "catalog");
@@ -75,15 +87,172 @@ public class MeliCompetitionService {
             out.set("competitors", M.createArrayNode());
             return out;
         }
-
-        JsonNode productNode = prod.status() == 200 ? prod.data() : null;
-        ObjectNode analysis = analyzeCatalogOffers(productNode, offers, userId, itemId, myPrice);
         analysis.put("item_id", itemId);
         analysis.put("catalog_product_id", cpid);
-        analysis.put("title", firstText(item.path("title").asText(null),
-                productNode == null ? null : productNode.path("name").asText(null)));
+        analysis.put("title", item.path("title").asText(""));
         analysis.put("category_id", item.path("category_id").asText(""));
         return analysis;
+    }
+
+    /** Busca as ofertas do produto de catálogo e roda o cálculo puro. null = sem dados. */
+    private ObjectNode fetchCatalogAnalysis(long userId, String cpid, String itemId, double myPrice) {
+        MeliResponse offersResp = client.get("/products/" + cpid + "/items", Map.of("limit", "50"), userId);
+        JsonNode offers = offersResp.data() == null ? null : offersResp.data().path("results");
+        if (offersResp.status() != 200 || offers == null || !offers.isArray()) return null;
+        MeliResponse prod = client.get("/products/" + cpid, userId);
+        JsonNode productNode = prod.status() == 200 ? prod.data() : null;
+        return analyzeCatalogOffers(productNode, offers, userId, itemId, myPrice);
+    }
+
+    // ---------- snapshot por conta (varredura em background) ----------
+
+    @Transactional(readOnly = true)
+    public ObjectNode load(long userId) {
+        return repo.findByUserIdAndKind(userId, KIND)
+                .map(s -> s.getData() instanceof ObjectNode o ? o : null)
+                .orElse(null);
+    }
+
+    @Transactional
+    public void save(ObjectNode snapshot) {
+        long userId = snapshot.path("user_id").asLong();
+        PerfSnapshot s = repo.findByUserIdAndKind(userId, KIND).orElse(null);
+        if (s == null) {
+            s = new PerfSnapshot(userId, KIND, Instant.now(), snapshot);
+        } else {
+            s.setScannedAt(Instant.now());
+            s.setData(snapshot);
+        }
+        repo.save(s);
+    }
+
+    /**
+     * Varre todos os anúncios da conta e monta uma linha compacta de concorrência
+     * por item. Só itens de <b>catálogo</b> recebem checagem de buy box (1 chamada
+     * por produto, cacheada); avulsos ficam marcados p/ análise ao vivo (fase 3).
+     * Salva checkpoints por lote, como o Quality.
+     */
+    public ObjectNode build(long userId, String nickname) {
+        ObjectNode snapshot = M.createObjectNode();
+        snapshot.put("user_id", userId);
+        snapshot.put("nickname", nickname);
+        snapshot.put("status", "running");
+        snapshot.put("started_at", nowIso());
+        snapshot.putNull("scanned_at");
+        snapshot.put("processed", 0);
+        snapshot.put("total", 0);
+        snapshot.set("warnings", M.createArrayNode());
+        snapshot.set("items", M.createArrayNode());
+        snapshot.set("summary", summarize(M.createArrayNode()));
+        save(snapshot);
+
+        List<String> ids = client.scanAllItems(userId, null, 100);
+        List<JsonNode> raw = new ArrayList<>();
+        for (JsonNode it : client.multiGetItems(ids, COMPETITION_FIELDS, userId)) {
+            String st = it.path("status").asText("");
+            if (!it.path("id").asText("").isEmpty() && (st.equals("active") || st.equals("paused"))) raw.add(it);
+        }
+        snapshot.put("total", raw.size());
+        save(snapshot);
+
+        // Cache por catalog_product_id: itens irmãos do mesmo produto reusam a análise.
+        Map<String, ObjectNode> cache = new LinkedHashMap<>();
+        ArrayNode items = M.createArrayNode();
+        int batch = 0;
+        for (JsonNode it : raw) {
+            items.add(competitionRow(userId, it, cache));
+            if (++batch % 50 == 0) {
+                snapshot.put("processed", batch);
+                save(snapshot);
+            }
+        }
+        snapshot.put("processed", raw.size());
+        snapshot.put("status", "complete");
+        snapshot.put("scanned_at", nowIso());
+        snapshot.set("items", items);
+        snapshot.set("summary", summarize(items));
+        save(snapshot);
+        log.info("competition: snapshot concluido user={} itens={}", userId, raw.size());
+        return snapshot;
+    }
+
+    /** Linha compacta por item (sem a lista completa de concorrentes, que é on-demand). */
+    private ObjectNode competitionRow(long userId, JsonNode item, Map<String, ObjectNode> cache) {
+        String itemId = item.path("id").asText("");
+        String cpid = item.path("catalog_product_id").asText(null);
+        double myPrice = item.path("price").asDouble(0);
+
+        ObjectNode row = M.createObjectNode();
+        row.put("id", itemId);
+        row.put("title", item.path("title").asText(""));
+        row.put("sku", item.path("seller_custom_field").asText(""));
+        row.set("thumbnail", nullable(item.get("thumbnail")));
+        row.set("permalink", nullable(item.get("permalink")));
+        row.set("status", nullable(item.get("status")));
+        row.put("price", myPrice);
+        row.put("category_id", item.path("category_id").asText(""));
+
+        if (cpid == null || cpid.isBlank()) {
+            row.put("mode", "standalone");
+            row.put("comp_status", "needs_live_check");
+            return row;
+        }
+
+        // 1 análise por produto de catálogo; itens do mesmo produto compartilham,
+        // mas posição/gap dependem do MEU preço → recalcula sobre as ofertas cacheadas.
+        ObjectNode analysis = cache.computeIfAbsent(cpid, k -> {
+            ObjectNode a = fetchCatalogAnalysis(userId, cpid, itemId, myPrice);
+            return a == null ? M.createObjectNode().put("_failed", true) : a;
+        });
+        row.put("mode", "catalog");
+        row.put("catalog_product_id", cpid);
+        if (analysis.path("_failed").asBoolean(false)) {
+            row.put("comp_status", "unknown");
+            return row;
+        }
+        row.put("comp_status", analysis.path("status").asText("competing"));
+        row.put("competitor_count", analysis.path("competitor_count").asInt(0));
+        row.put("my_position", analysis.path("my_position").asInt(0));
+        row.set("winner_price", analysis.get("winner_price"));
+        row.set("price_gap", analysis.get("price_gap"));
+        row.set("price_gap_pct", analysis.get("price_gap_pct"));
+        row.set("price_to_win", analysis.get("price_to_win"));
+        return row;
+    }
+
+    static ObjectNode summarize(JsonNode items) {
+        int analyzed = 0, catalog = 0, standalone = 0;
+        int winning = 0, sharing = 0, competing = 0, notListed = 0, unknown = 0;
+        for (JsonNode it : items) {
+            analyzed++;
+            if ("standalone".equals(it.path("mode").asText())) { standalone++; continue; }
+            catalog++;
+            switch (it.path("comp_status").asText("")) {
+                case "winning" -> winning++;
+                case "sharing" -> sharing++;
+                case "competing" -> competing++;
+                case "not_listed" -> notListed++;
+                default -> unknown++;
+            }
+        }
+        ObjectNode out = M.createObjectNode();
+        out.put("analyzed", analyzed);
+        out.put("catalog", catalog);
+        out.put("standalone", standalone);
+        out.put("winning", winning);
+        out.put("sharing", sharing);
+        out.put("competing", competing);   // perdendo o buy box
+        out.put("not_listed", notListed);
+        out.put("unknown", unknown);
+        return out;
+    }
+
+    private static JsonNode nullable(JsonNode node) {
+        return node == null || node.isNull() ? M.nullNode() : node;
+    }
+
+    private static String nowIso() {
+        return LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS).toString();
     }
 
     /**
@@ -188,11 +357,6 @@ public class MeliCompetitionService {
     private static double priceOrMax(JsonNode row) {
         double p = row.path("price").asDouble(0);
         return p > 0 ? p : Double.MAX_VALUE;
-    }
-
-    private static String firstText(String... vals) {
-        for (String v : vals) if (v != null && !v.isBlank()) return v;
-        return "";
     }
 
     private static double round2(double v) {

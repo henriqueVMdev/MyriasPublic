@@ -129,6 +129,12 @@ const router = createRouter({
           meta: { perm: "quality" },
         },
         {
+          path: "concorrencia",
+          name: "competition",
+          component: () => import("@/pages/Concorrencia.vue"),
+          meta: { perm: "concorrencia" },
+        },
+        {
           path: "usuarios",
           name: "users",
           component: () => import("@/pages/Users.vue"),
@@ -160,6 +166,7 @@ const SECTION_ROUTES: { perm: string; path: string }[] = [
   { perm: "mensagens", path: "/atendimento/mensagens" },
   { perm: "atendimento_historico", path: "/atendimento/historico" },
   { perm: "quality", path: "/qualidade" },
+  { perm: "concorrencia", path: "/concorrencia" },
 ];
 
 function firstAllowedPath(auth: ReturnType<typeof useAuthStore>): string | null {

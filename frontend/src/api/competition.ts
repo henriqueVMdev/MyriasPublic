@@ -45,3 +45,72 @@ export async function getItemCompetition(itemId: string): Promise<CompetitionAna
   );
   return data;
 }
+
+// ---------- snapshot por conta ----------
+
+export type CompItemStatus = CompetitionStatus | "needs_live_check" | "unknown";
+
+export interface CompetitionRow {
+  id: string;
+  title: string;
+  sku: string;
+  thumbnail?: string | null;
+  permalink?: string | null;
+  status?: string | null;
+  price: number;
+  category_id: string;
+  mode: "catalog" | "standalone";
+  comp_status: CompItemStatus;
+  catalog_product_id?: string;
+  competitor_count?: number;
+  my_position?: number;
+  winner_price?: number | null;
+  price_gap?: number | null;
+  price_gap_pct?: number | null;
+  price_to_win?: number | null;
+}
+
+export interface CompetitionSummary {
+  analyzed: number;
+  catalog: number;
+  standalone: number;
+  winning: number;
+  sharing: number;
+  competing: number;
+  not_listed: number;
+  unknown: number;
+}
+
+export interface CompetitionReport {
+  has_snapshot: boolean;
+  refreshing: boolean;
+  status: "empty" | "running" | "complete" | "error" | "interrupted";
+  started_at?: string | null;
+  scanned_at?: string | null;
+  processed: number;
+  total: number;
+  summary: CompetitionSummary;
+  items: CompetitionRow[];
+  paging: { total: number; offset: number; limit: number };
+  warnings: string[];
+}
+
+export interface CompetitionFilters {
+  q?: string;
+  status?: string;
+  offset?: number;
+  limit?: number;
+}
+
+export async function getCompetitionReport(filters: CompetitionFilters = {}): Promise<CompetitionReport> {
+  const params = Object.fromEntries(
+    Object.entries(filters).filter(([, value]) => value !== undefined && value !== "")
+  );
+  const { data } = await api.get<CompetitionReport>("/competition", { params });
+  return data;
+}
+
+export async function refreshCompetition(): Promise<{ started: boolean; already_running: boolean }> {
+  const { data } = await api.post("/competition/refresh");
+  return data;
+}

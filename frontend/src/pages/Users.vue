@@ -20,6 +20,7 @@ const PERM_LABELS: Record<string, string> = {
   performance: "Performance",
   repetidos: "Anúncios Repetidos",
   quality: "Anúncios Incompletos",
+  concorrencia: "Concorrência",
   bulk: "Edição por SKU",
   clone: "Copiar Anúncio",
   promocoes: "Promoções",
