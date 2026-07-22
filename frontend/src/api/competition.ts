@@ -46,11 +46,16 @@ export interface CompetitionAnalysis {
   max_price?: number | null;
   price_percentile?: number | null;
   free_shipping_pct?: number;
+  matched_by?: "code" | "title";
+  codes?: { label: string; value: string }[];
+  search_terms?: string[];
 }
 
-export async function getItemCompetition(itemId: string): Promise<CompetitionAnalysis> {
+export async function getItemCompetition(itemId: string, code?: string): Promise<CompetitionAnalysis> {
+  const params = code ? { code } : undefined;
   const { data } = await api.get<CompetitionAnalysis>(
-    `/competition/items/${encodeURIComponent(itemId)}`
+    `/competition/items/${encodeURIComponent(itemId)}`,
+    { params }
   );
   return data;
 }

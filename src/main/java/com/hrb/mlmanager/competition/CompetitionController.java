@@ -103,10 +103,12 @@ public class CompetitionController {
     }
 
     @GetMapping("/items/{itemId}")
-    public ObjectNode analyzeItem(@PathVariable String itemId, HttpServletRequest request) {
+    public ObjectNode analyzeItem(@PathVariable String itemId,
+                                  @RequestParam(required = false) String code,
+                                  HttpServletRequest request) {
         security.require(request, "concorrencia");
         long userId = auth.requireActiveAccountId();
-        return svc.analyzeItem(userId, itemId);
+        return svc.analyzeItem(userId, itemId, code);
     }
 
     // ---------- filtro/ordenação ----------

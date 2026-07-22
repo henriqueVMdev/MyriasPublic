@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
-import { Swords, Loader2, Trophy, ExternalLink } from "lucide-vue-next";
+import { Swords, Loader2, Trophy, ExternalLink, Search } from "lucide-vue-next";
 import { getItemCompetition, type CompetitionAnalysis } from "@/api/competition";
 
 const props = defineProps<{ itemId: string }>();
@@ -8,18 +8,23 @@ const props = defineProps<{ itemId: string }>();
 const data = ref<CompetitionAnalysis | null>(null);
 const loading = ref(false);
 const error = ref("");
+const codeInput = ref("");
 
-async function load() {
+async function load(code?: string) {
   loading.value = true;
   error.value = "";
   try {
-    data.value = await getItemCompetition(props.itemId);
+    data.value = await getItemCompetition(props.itemId, code || undefined);
   } catch (e) {
     error.value = "Não foi possível carregar a concorrência.";
     console.error("Erro concorrência:", e);
   } finally {
     loading.value = false;
   }
+}
+
+function searchByCode() {
+  load(codeInput.value.trim());
 }
 
 const STATUS: Record<string, { label: string; cls: string }> = {
@@ -53,17 +58,14 @@ onMounted(load);
 
     <div v-else-if="error" class="text-sm text-red-600 text-center py-6">{{ error }}</div>
 
-    <!-- Não encontrado, ou avulso sem base de comparação -->
-    <div
-      v-else-if="data && (data.mode === 'not_found' || (data.mode === 'standalone' && (!data.competitors || data.competitors.length === 0)))"
-      class="text-sm text-gray-500 text-center py-6"
-    >
-      {{ data.message || "Nenhum concorrente encontrado na busca pública para este anúncio." }}
+    <!-- Não encontrado -->
+    <div v-else-if="data && data.mode === 'not_found'" class="text-sm text-gray-500 text-center py-6">
+      {{ data.message }}
     </div>
 
     <!-- Avulso (fora de catálogo): comparação por busca pública -->
     <template v-else-if="data && data.mode === 'standalone'">
-      <div class="flex flex-wrap items-center gap-3 mb-4">
+      <div class="flex flex-wrap items-center gap-3 mb-3">
         <span class="px-2.5 py-1 rounded-lg text-xs font-semibold" :class="STATUS[data.status ?? 'unknown']?.cls">
           {{ STATUS[data.status ?? 'unknown']?.label }}
         </span>
@@ -71,9 +73,37 @@ onMounted(load);
         <span v-if="data.my_position" class="text-sm text-gray-500 dark:text-gray-400">
           Sua posição: <strong class="text-gray-800 dark:text-gray-100">{{ data.my_position }}º</strong>
         </span>
-        <span class="text-[11px] text-gray-400">comparação aproximada por título/categoria</span>
       </div>
 
+      <!-- Como os concorrentes foram encontrados + busca manual por código -->
+      <div class="flex flex-wrap items-center gap-2 mb-4 text-xs">
+        <template v-if="data.matched_by === 'code' && data.codes && data.codes.length">
+          <span class="text-gray-500 dark:text-gray-400">Encontrados por código:</span>
+          <span
+            v-for="c in data.codes" :key="c.value"
+            class="px-2 py-0.5 rounded bg-meli-blue/10 dark:bg-brand-yellow/10 text-meli-blue dark:text-brand-yellow font-mono"
+            :title="c.label"
+          >{{ c.value }}</span>
+        </template>
+        <span v-else class="text-gray-400">Comparação aproximada por título/categoria</span>
+
+        <div class="flex items-center gap-1 ml-auto">
+          <div class="relative">
+            <Search :size="13" class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              v-model="codeInput" @keyup.enter="searchByCode"
+              placeholder="Buscar por código…"
+              class="pl-7 pr-2 py-1 rounded-lg border dark:border-zinc-700 dark:bg-zinc-800 text-xs w-40 font-mono"
+            />
+          </div>
+          <button
+            @click="searchByCode" :disabled="loading || !codeInput.trim()"
+            class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-meli-blue text-brand-yellow disabled:opacity-40"
+          >Buscar</button>
+        </div>
+      </div>
+
+      <template v-if="data.competitors && data.competitors.length">
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
         <div class="rounded-lg bg-gray-50 dark:bg-zinc-800 p-3">
           <div class="text-[11px] text-gray-500 dark:text-gray-400">Seu preço</div>
@@ -124,6 +154,10 @@ onMounted(load);
             </tr>
           </tbody>
         </table>
+      </div>
+      </template>
+      <div v-else class="text-sm text-gray-500 text-center py-6">
+        {{ data.message || "Nenhum concorrente encontrado. Tente buscar por outro código acima." }}
       </div>
     </template>
 

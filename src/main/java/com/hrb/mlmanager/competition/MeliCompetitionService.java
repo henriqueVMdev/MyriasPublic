@@ -51,8 +51,16 @@ public class MeliCompetitionService {
         this.repo = repo;
     }
 
-    /** Detalhe ao vivo por item. Decide catálogo vs. avulso por catalog_product_id. */
     public ObjectNode analyzeItem(long userId, String itemId) {
+        return analyzeItem(userId, itemId, null);
+    }
+
+    /**
+     * Detalhe ao vivo por item. Decide catálogo vs. avulso por catalog_product_id.
+     * {@code overrideCode} força a busca pública por um código informado à mão
+     * (fluxo autopeças: procurar concorrentes pelo código original), ignorando o catálogo.
+     */
+    public ObjectNode analyzeItem(long userId, String itemId, String overrideCode) {
         MeliResponse itemResp = client.get("/items/" + itemId, Map.of("include_attributes", "all"), userId);
         if (itemResp.status() == 404 || itemResp.data() == null || !itemResp.data().isObject()) {
             ObjectNode out = M.createObjectNode();
@@ -65,8 +73,9 @@ public class MeliCompetitionService {
         String cpid = item.path("catalog_product_id").asText(null);
         double myPrice = item.path("price").asDouble(0);
 
-        if (cpid == null || cpid.isBlank()) {
-            return analyzeStandalone(userId, item, itemId, myPrice);
+        boolean hasOverride = overrideCode != null && !overrideCode.isBlank();
+        if (hasOverride || cpid == null || cpid.isBlank()) {
+            return analyzeStandalone(userId, item, itemId, myPrice, hasOverride ? overrideCode : null);
         }
 
         ObjectNode analysis = fetchCatalogAnalysis(userId, cpid, itemId, myPrice);
@@ -100,35 +109,114 @@ public class MeliCompetitionService {
 
     // ---------- avulsos: comparação por busca pública (fase 3) ----------
 
-    /** Anúncio fora de catálogo: compara com a busca pública da categoria/termo. */
-    private ObjectNode analyzeStandalone(long userId, JsonNode item, String itemId, double myPrice) {
+    /** Atributos que carregam códigos de peça (autopeças). Ordem = prioridade de busca. */
+    private static final List<String[]> CODE_ATTRS = List.of(
+            new String[]{"OEM", "código original (OEM)"},
+            new String[]{"PART_NUMBER", "número da peça"},
+            new String[]{"GTIN", "GTIN"});
+
+    record CodeTerm(String label, String value) {}
+
+    /**
+     * Anúncio fora de catálogo: acha concorrentes por <b>código</b> (OEM/PART_NUMBER/
+     * GTIN dos atributos, ou um código informado à mão) e cai pro título só se não
+     * houver código. Buscar pelo código é bem mais preciso que pelo título p/ autopeças.
+     */
+    private ObjectNode analyzeStandalone(long userId, JsonNode item, String itemId,
+                                         double myPrice, String overrideCode) {
         String title = item.path("title").asText("");
         String categoryId = item.path("category_id").asText("");
-        StringBuilder path = new StringBuilder("/sites/MLB/search?limit=20");
-        if (!title.isBlank()) path.append("&q=").append(URLEncoder.encode(title, StandardCharsets.UTF_8));
-        if (!categoryId.isBlank()) path.append("&category=").append(categoryId);
 
-        MeliResponse resp = client.getPublic(path.toString());
-        JsonNode results = resp.data() == null ? null : resp.data().path("results");
-        if (resp.status() != 200 || results == null || !results.isArray()) {
-            log.warn("competition: busca pública item={} -> HTTP {}", itemId, resp.status());
-            ObjectNode out = M.createObjectNode();
-            out.put("item_id", itemId);
-            out.put("mode", "standalone");
-            out.put("title", title);
-            out.put("category_id", categoryId);
-            out.put("my_price", myPrice > 0 ? round2(myPrice) : 0.0);
-            out.put("message", "Não foi possível buscar concorrentes agora.");
-            out.set("competitors", M.createArrayNode());
-            return out;
+        List<CodeTerm> codes = overrideCode != null && !overrideCode.isBlank()
+                ? List.of(new CodeTerm("código informado", overrideCode.strip()))
+                : extractCodes(item);
+
+        String matchedBy;
+        List<String> termsUsed = new ArrayList<>();
+        Map<String, JsonNode> byId = new LinkedHashMap<>();
+        if (!codes.isEmpty()) {
+            matchedBy = "code";
+            for (CodeTerm code : codes) {
+                termsUsed.add(code.value());
+                // Código é específico: busca sem filtro de categoria pra não perder concorrente.
+                aggregate(byId, publicSearch(code.value(), null));
+            }
+        } else {
+            matchedBy = "title";
+            if (!title.isBlank()) termsUsed.add(title);
+            aggregate(byId, publicSearch(title, categoryId));
         }
+
+        ArrayNode results = M.createArrayNode();
+        byId.values().forEach(results::add);
 
         ObjectNode out = analyzeSearchResults(results, userId, itemId, myPrice);
         out.put("item_id", itemId);
         out.put("mode", "standalone");
         out.put("title", title);
         out.put("category_id", categoryId);
+        out.put("matched_by", matchedBy);
+        ArrayNode codesArr = out.putArray("codes");
+        for (CodeTerm c : codes) codesArr.addObject().put("label", c.label()).put("value", c.value());
+        ArrayNode termsArr = out.putArray("search_terms");
+        termsUsed.forEach(termsArr::add);
+        if (results.isEmpty()) {
+            out.put("message", codes.isEmpty()
+                    ? "Sem código nem título para buscar concorrentes."
+                    : "Nenhum concorrente encontrado para o código pesquisado.");
+        }
         return out;
+    }
+
+    /** Busca pública por termo; retorna o array de results (vazio em falha). */
+    private JsonNode publicSearch(String q, String category) {
+        if (q == null || q.isBlank()) return M.createArrayNode();
+        StringBuilder path = new StringBuilder("/sites/MLB/search?limit=20&q=")
+                .append(URLEncoder.encode(q, StandardCharsets.UTF_8));
+        if (category != null && !category.isBlank()) path.append("&category=").append(category);
+        MeliResponse resp = client.getPublic(path.toString());
+        JsonNode results = resp.data() == null ? null : resp.data().path("results");
+        if (resp.status() != 200 || results == null || !results.isArray()) {
+            log.warn("competition: busca pública q='{}' -> HTTP {}", q, resp.status());
+            return M.createArrayNode();
+        }
+        return results;
+    }
+
+    private static void aggregate(Map<String, JsonNode> byId, JsonNode results) {
+        for (JsonNode r : results) {
+            String id = r.path("id").asText("");
+            if (!id.isEmpty()) byId.putIfAbsent(id, r);
+        }
+    }
+
+    /** Extrai até 3 códigos distintos (com dígito, len>=4) dos atributos de peça. */
+    static List<CodeTerm> extractCodes(JsonNode item) {
+        List<CodeTerm> out = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (JsonNode attr : item.path("attributes")) {
+            String id = attr.path("id").asText("");
+            String label = codeAttrLabel(id);
+            if (label == null) continue;
+            String raw = attr.path("value_name").asText("");
+            for (String token : raw.split("[\\s,;/|]+")) {
+                String t = token.strip();
+                if (t.length() >= 4 && t.chars().anyMatch(Character::isDigit) && seen.add(t.toUpperCase())) {
+                    out.add(new CodeTerm(label, t));
+                    if (out.size() >= 3) return out;
+                }
+            }
+        }
+        return out;
+    }
+
+    private static String codeAttrLabel(String id) {
+        if (id == null || id.isBlank()) return null;
+        for (String[] pair : CODE_ATTRS) if (pair[0].equals(id)) return pair[1];
+        String up = id.toUpperCase();
+        if (up.contains("OEM")) return "código original (OEM)";
+        if (up.contains("PART_NUMBER")) return "número da peça";
+        return null;
     }
 
     /**

@@ -110,4 +110,23 @@ class MeliCompetitionServiceTest {
         assertEquals("cheapest", r.path("status").asText());
         assertEquals(1, r.path("my_position").asInt());
     }
+
+    private ObjectNode attr(String id, String valueName) {
+        return m.createObjectNode().put("id", id).put("value_name", valueName);
+    }
+
+    @Test
+    void extractCodesPrefersOemAndFiltersJunk() {
+        ObjectNode item = m.createObjectNode();
+        ArrayNode attrs = item.putArray("attributes");
+        attrs.add(attr("BRAND", "Bosch"));                 // sem dígito → ignorado
+        attrs.add(attr("OEM", "9L8Z-6079-A, 9L8Z6079A"));  // 2 tokens, ambos com dígito
+        attrs.add(attr("PART_NUMBER", "BX123"));           // len>=4 com dígito
+
+        var codes = MeliCompetitionService.extractCodes(item);
+
+        assertTrue(codes.size() >= 2, "deve extrair códigos com dígito");
+        assertEquals("9L8Z-6079-A", codes.get(0).value(), "OEM vem primeiro");
+        assertTrue(codes.stream().noneMatch(c -> c.value().equals("Bosch")), "marca sem dígito não é código");
+    }
 }
