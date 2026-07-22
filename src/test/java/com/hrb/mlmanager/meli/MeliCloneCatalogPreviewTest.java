@@ -18,7 +18,7 @@ class MeliCloneCatalogPreviewTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Test
-    void montaPreviewParcialDeTerceiroUsandoOfertasDoCatalogo() throws Exception {
+    void montaPreviewParcialfertasDoCatalogo() throws Exception {
         StubClient client = new StubClient();
         MeliAuthService auth = mock(MeliAuthService.class);
         when(auth.listAccounts()).thenReturn(List.of(Map.of(
@@ -87,7 +87,7 @@ class MeliCloneCatalogPreviewTest {
 
     private static final class StubClient extends MeliClient {
         StubClient() {
-            super(mock(MeliAuthService.class), new MeliRateLimiter(60_000, 10), 1);
+            super(mock(MeliAuthService.class), new MeliRateLimiterTest(60_000, 10), 1);
         }
 
         @Override

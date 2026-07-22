@@ -29,7 +29,7 @@ import org.springframework.web.client.RestClient;
  * Espelho de backend/app/services/meli_client.py.
  *
  * O async do Python (httpx + asyncio) vira síncrono: cada chamada roda na thread
- * do request e o {@link MeliRateLimiter} bloqueia a thread em vez de uma
+ * do request e o {@link MeliRateLimiterTest} bloqueia a thread em vez de uma
  * coroutine. O paralelismo do {@code asyncio.gather} em {@link #multiGetItems}
  * vira um {@link ExecutorService} — mas o teto real de concorrência continua
  * sendo o semáforo do limiter, não o tamanho do pool.
@@ -45,11 +45,11 @@ public class MeliClient {
     private static final int MULTIGET_BATCH = 20; // limite do /items?ids=
 
     private final MeliAuthService auth;
-    private final MeliRateLimiter limiter;
+    private final MeliRateLimiterTest limiter;
     private final RestClient http;
     private final ExecutorService pool;
 
-    public MeliClient(MeliAuthService auth, MeliRateLimiter limiter,
+    public MeliClient(MeliAuthService auth, MeliRateLimiterTest limiter,
                       @Value("${meli.max-concurrent-requests:10}") int maxConcurrent) {
         this.auth = auth;
         this.limiter = limiter;
