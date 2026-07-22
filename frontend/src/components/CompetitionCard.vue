@@ -27,6 +27,10 @@ const STATUS: Record<string, { label: string; cls: string }> = {
   sharing: { label: "Empate no topo", cls: "text-meli-blue bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300" },
   competing: { label: "Você está perdendo o buy box", cls: "text-amber-700 bg-amber-100 dark:bg-amber-900/30 dark:text-amber-300" },
   not_listed: { label: "Você não tem oferta neste catálogo", cls: "text-gray-600 bg-gray-100 dark:bg-zinc-800 dark:text-gray-300" },
+  cheapest: { label: "Você é o mais barato", cls: "text-green-700 bg-green-100 dark:bg-green-900/30 dark:text-green-300" },
+  below_median: { label: "Abaixo da mediana", cls: "text-meli-blue bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300" },
+  above_median: { label: "Acima da mediana", cls: "text-amber-700 bg-amber-100 dark:bg-amber-900/30 dark:text-amber-300" },
+  unknown: { label: "Sem base de comparação", cls: "text-gray-600 bg-gray-100 dark:bg-zinc-800 dark:text-gray-300" },
 };
 
 function fmtPrice(v: number | null | undefined): string {
@@ -49,10 +53,79 @@ onMounted(load);
 
     <div v-else-if="error" class="text-sm text-red-600 text-center py-6">{{ error }}</div>
 
-    <!-- Fora de catálogo / não encontrado: mensagem do backend -->
-    <div v-else-if="data && data.mode !== 'catalog'" class="text-sm text-gray-500 text-center py-6">
-      {{ data.message }}
+    <!-- Não encontrado, ou avulso sem base de comparação -->
+    <div
+      v-else-if="data && (data.mode === 'not_found' || (data.mode === 'standalone' && (!data.competitors || data.competitors.length === 0)))"
+      class="text-sm text-gray-500 text-center py-6"
+    >
+      {{ data.message || "Nenhum concorrente encontrado na busca pública para este anúncio." }}
     </div>
+
+    <!-- Avulso (fora de catálogo): comparação por busca pública -->
+    <template v-else-if="data && data.mode === 'standalone'">
+      <div class="flex flex-wrap items-center gap-3 mb-4">
+        <span class="px-2.5 py-1 rounded-lg text-xs font-semibold" :class="STATUS[data.status ?? 'unknown']?.cls">
+          {{ STATUS[data.status ?? 'unknown']?.label }}
+        </span>
+        <span class="text-sm text-gray-500 dark:text-gray-400">{{ data.competitor_count }} concorrentes na busca</span>
+        <span v-if="data.my_position" class="text-sm text-gray-500 dark:text-gray-400">
+          Sua posição: <strong class="text-gray-800 dark:text-gray-100">{{ data.my_position }}º</strong>
+        </span>
+        <span class="text-[11px] text-gray-400">comparação aproximada por título/categoria</span>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+        <div class="rounded-lg bg-gray-50 dark:bg-zinc-800 p-3">
+          <div class="text-[11px] text-gray-500 dark:text-gray-400">Seu preço</div>
+          <div class="text-lg font-bold">{{ fmtPrice(data.my_price) }}</div>
+        </div>
+        <div class="rounded-lg bg-gray-50 dark:bg-zinc-800 p-3">
+          <div class="text-[11px] text-gray-500 dark:text-gray-400">Mais barato</div>
+          <div class="text-lg font-bold">{{ fmtPrice(data.min_price) }}</div>
+        </div>
+        <div class="rounded-lg bg-gray-50 dark:bg-zinc-800 p-3">
+          <div class="text-[11px] text-gray-500 dark:text-gray-400">Preço mediano</div>
+          <div class="text-lg font-bold">{{ fmtPrice(data.median_price) }}</div>
+        </div>
+        <div class="rounded-lg bg-gray-50 dark:bg-zinc-800 p-3">
+          <div class="text-[11px] text-gray-500 dark:text-gray-400">Frete grátis</div>
+          <div class="text-lg font-bold">{{ data.free_shipping_pct != null ? data.free_shipping_pct + "%" : "—" }}</div>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left text-xs text-gray-500 dark:text-gray-400 border-b dark:border-zinc-800">
+              <th class="py-2 pr-3 font-medium">Concorrente</th>
+              <th class="py-2 px-3 font-medium text-right">Preço</th>
+              <th class="py-2 px-3 font-medium text-right">Vendas</th>
+              <th class="py-2 px-3 font-medium">Frete</th>
+              <th class="py-2 pl-3 font-medium"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="c in data.competitors" :key="c.item_id" class="border-b last:border-0 dark:border-zinc-800">
+              <td class="py-2 pr-3">
+                <div class="truncate max-w-xs">{{ c.title || c.seller_nickname || ("Vendedor " + c.seller_id) }}</div>
+                <div class="text-[11px] text-gray-400">{{ c.seller_nickname }}</div>
+              </td>
+              <td class="py-2 px-3 text-right font-semibold tabular-nums">{{ fmtPrice(c.price) }}</td>
+              <td class="py-2 px-3 text-right tabular-nums text-gray-500">{{ c.sold_quantity.toLocaleString("pt-BR") }}</td>
+              <td class="py-2 px-3">
+                <span v-if="c.free_shipping" class="text-xs text-green-600 font-medium">Grátis</span>
+                <span v-else class="text-xs text-gray-400">—</span>
+              </td>
+              <td class="py-2 pl-3 text-right">
+                <a v-if="c.permalink" :href="c.permalink" target="_blank" class="text-gray-400 hover:text-meli-blue inline-flex" title="Ver anúncio">
+                  <ExternalLink :size="14" />
+                </a>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </template>
 
     <template v-else-if="data && data.mode === 'catalog'">
       <!-- Sem ofertas -->

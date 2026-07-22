@@ -2,41 +2,50 @@ import api from "./client";
 
 export interface Competitor {
   item_id: string;
+  title?: string;
   seller_id: number;
   seller_nickname: string;
   price: number;
   original_price?: number;
   sold_quantity: number;
-  available_quantity: number;
-  listing_type_id: string;
-  condition: string;
+  available_quantity?: number;
+  listing_type_id?: string;
+  condition?: string;
   free_shipping: boolean;
   logistic_type: string;
   official_store_id?: string | null;
-  is_mine: boolean;
-  is_winner: boolean;
+  permalink?: string | null;
+  is_mine?: boolean;
+  is_winner?: boolean;
 }
 
 export type CompetitionMode = "catalog" | "standalone" | "not_found";
 export type CompetitionStatus = "winning" | "sharing" | "competing" | "not_listed";
+export type StandaloneStatus = "cheapest" | "below_median" | "above_median" | "unknown";
 
 export interface CompetitionAnalysis {
   item_id: string;
   mode: CompetitionMode;
   message?: string;
-  // catálogo:
-  catalog_product_id?: string;
   title?: string;
   category_id?: string;
-  status?: CompetitionStatus;
+  status?: CompetitionStatus | StandaloneStatus;
   competitor_count?: number;
   my_price?: number;
   my_position?: number;
+  competitors?: Competitor[];
+  // catálogo:
+  catalog_product_id?: string;
   winner_price?: number;
   price_gap?: number | null;
   price_gap_pct?: number | null;
   price_to_win?: number | null;
-  competitors?: Competitor[];
+  // avulso (busca pública):
+  median_price?: number | null;
+  min_price?: number | null;
+  max_price?: number | null;
+  price_percentile?: number | null;
+  free_shipping_pct?: number;
 }
 
 export async function getItemCompetition(itemId: string): Promise<CompetitionAnalysis> {

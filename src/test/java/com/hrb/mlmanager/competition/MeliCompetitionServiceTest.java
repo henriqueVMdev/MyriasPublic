@@ -70,4 +70,44 @@ class MeliCompetitionServiceTest {
         assertEquals("not_listed", r.path("status").asText());
         assertEquals(0, r.path("my_position").asInt());
     }
+
+    private ObjectNode searchResult(long sellerId, String id, double price, boolean free) {
+        ObjectNode o = m.createObjectNode();
+        o.putObject("seller").put("id", sellerId).put("nickname", "s" + sellerId);
+        o.put("id", id);
+        o.put("price", price);
+        o.putObject("shipping").put("free_shipping", free);
+        return o;
+    }
+
+    @Test
+    void standaloneSearchComputesPositionAndPercentile() {
+        long me = 111L;
+        ArrayNode results = m.createArrayNode();
+        results.add(searchResult(me, "MLB-MINE", 130.0, false));  // meu próprio anúncio: ignorado
+        results.add(searchResult(999L, "MLB-A", 100.0, true));
+        results.add(searchResult(888L, "MLB-B", 150.0, false));
+        results.add(searchResult(777L, "MLB-C", 200.0, true));
+
+        ObjectNode r = MeliCompetitionService.analyzeSearchResults(results, me, "MLB-MINE", 130.0);
+
+        assertEquals(3, r.path("competitor_count").asInt(), "meu anúncio não conta como concorrente");
+        assertEquals("below_median", r.path("status").asText());
+        assertEquals(2, r.path("my_position").asInt(), "1 concorrente (100) é mais barato que eu (130)");
+        assertEquals(150.0, r.path("median_price").asDouble(), 0.001);
+        assertEquals(100.0, r.path("min_price").asDouble(), 0.001);
+        assertTrue(r.path("free_shipping_pct").asDouble() > 0);
+    }
+
+    @Test
+    void standaloneCheapestWhenBelowAll() {
+        ArrayNode results = m.createArrayNode();
+        results.add(searchResult(999L, "MLB-A", 100.0, false));
+        results.add(searchResult(888L, "MLB-B", 120.0, false));
+
+        ObjectNode r = MeliCompetitionService.analyzeSearchResults(results, 111L, "MLB-MINE", 90.0);
+
+        assertEquals("cheapest", r.path("status").asText());
+        assertEquals(1, r.path("my_position").asInt());
+    }
 }

@@ -8,6 +8,8 @@ import com.hrb.mlmanager.meli.MeliClient;
 import com.hrb.mlmanager.meli.MeliClient.MeliResponse;
 import com.hrb.mlmanager.perf.PerfSnapshot;
 import com.hrb.mlmanager.perf.PerfSnapshotRepository;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -64,15 +66,7 @@ public class MeliCompetitionService {
         double myPrice = item.path("price").asDouble(0);
 
         if (cpid == null || cpid.isBlank()) {
-            // Fase 3 cobre avulsos por busca pública. Por enquanto, resposta explícita.
-            ObjectNode out = M.createObjectNode();
-            out.put("item_id", itemId);
-            out.put("mode", "standalone");
-            out.put("title", item.path("title").asText(""));
-            out.put("category_id", item.path("category_id").asText(""));
-            out.put("my_price", myPrice);
-            out.put("message", "Anúncio fora de catálogo — comparação por busca pública ainda não disponível.");
-            return out;
+            return analyzeStandalone(userId, item, itemId, myPrice);
         }
 
         ObjectNode analysis = fetchCatalogAnalysis(userId, cpid, itemId, myPrice);
@@ -102,6 +96,110 @@ public class MeliCompetitionService {
         MeliResponse prod = client.get("/products/" + cpid, userId);
         JsonNode productNode = prod.status() == 200 ? prod.data() : null;
         return analyzeCatalogOffers(productNode, offers, userId, itemId, myPrice);
+    }
+
+    // ---------- avulsos: comparação por busca pública (fase 3) ----------
+
+    /** Anúncio fora de catálogo: compara com a busca pública da categoria/termo. */
+    private ObjectNode analyzeStandalone(long userId, JsonNode item, String itemId, double myPrice) {
+        String title = item.path("title").asText("");
+        String categoryId = item.path("category_id").asText("");
+        StringBuilder path = new StringBuilder("/sites/MLB/search?limit=20");
+        if (!title.isBlank()) path.append("&q=").append(URLEncoder.encode(title, StandardCharsets.UTF_8));
+        if (!categoryId.isBlank()) path.append("&category=").append(categoryId);
+
+        MeliResponse resp = client.getPublic(path.toString());
+        JsonNode results = resp.data() == null ? null : resp.data().path("results");
+        if (resp.status() != 200 || results == null || !results.isArray()) {
+            log.warn("competition: busca pública item={} -> HTTP {}", itemId, resp.status());
+            ObjectNode out = M.createObjectNode();
+            out.put("item_id", itemId);
+            out.put("mode", "standalone");
+            out.put("title", title);
+            out.put("category_id", categoryId);
+            out.put("my_price", myPrice > 0 ? round2(myPrice) : 0.0);
+            out.put("message", "Não foi possível buscar concorrentes agora.");
+            out.set("competitors", M.createArrayNode());
+            return out;
+        }
+
+        ObjectNode out = analyzeSearchResults(results, userId, itemId, myPrice);
+        out.put("item_id", itemId);
+        out.put("mode", "standalone");
+        out.put("title", title);
+        out.put("category_id", categoryId);
+        return out;
+    }
+
+    /**
+     * Núcleo puro (sem rede) da comparação por busca pública: remove meus próprios
+     * anúncios, ordena por preço e calcula minha posição/percentil e as estatísticas.
+     */
+    static ObjectNode analyzeSearchResults(JsonNode results, long userId, String myItemId, double myPrice) {
+        List<ObjectNode> competitors = new ArrayList<>();
+        List<Double> prices = new ArrayList<>();
+        int freeShipping = 0;
+        for (JsonNode r : results) {
+            long sellerId = r.path("seller").path("id").asLong(r.path("seller_id").asLong(0));
+            String rid = r.path("id").asText("");
+            if (sellerId == userId || (!rid.isEmpty() && rid.equals(myItemId))) continue; // não sou concorrente de mim
+            ObjectNode row = M.createObjectNode();
+            row.put("item_id", rid);
+            row.put("title", r.path("title").asText(""));
+            row.put("seller_id", sellerId);
+            row.put("seller_nickname", r.path("seller").path("nickname").asText(""));
+            double price = r.path("price").asDouble(0);
+            row.put("price", price);
+            row.put("sold_quantity", r.path("sold_quantity").asInt(0));
+            boolean free = r.path("shipping").path("free_shipping").asBoolean(false);
+            row.put("free_shipping", free);
+            row.put("logistic_type", r.path("shipping").path("logistic_type").asText(""));
+            row.set("permalink", nullable(r.get("permalink")));
+            competitors.add(row);
+            if (price > 0) prices.add(price);
+            if (free) freeShipping++;
+        }
+        competitors.sort(Comparator.comparingDouble(c -> {
+            double p = c.path("price").asDouble(0);
+            return p > 0 ? p : Double.MAX_VALUE;
+        }));
+        prices.sort(Comparator.naturalOrder());
+
+        int competitorCount = competitors.size();
+        Double median = prices.isEmpty() ? null : prices.get(prices.size() / 2);
+        Double min = prices.isEmpty() ? null : prices.get(0);
+        Double max = prices.isEmpty() ? null : prices.get(prices.size() - 1);
+        int cheaperCount = 0;
+        for (double p : prices) if (p < myPrice) cheaperCount++;
+        // Percentil do meu preço: fração de concorrentes com preço <= o meu (menor = mais barato).
+        Double pricePercentile = null;
+        if (myPrice > 0 && !prices.isEmpty()) {
+            int atOrBelow = 0;
+            for (double p : prices) if (p <= myPrice) atOrBelow++;
+            pricePercentile = round2((double) atOrBelow / prices.size() * 100.0);
+        }
+
+        String status;
+        if (myPrice <= 0 || min == null) status = "unknown";
+        else if (myPrice <= min) status = "cheapest";
+        else if (median != null && myPrice <= median) status = "below_median";
+        else status = "above_median";
+
+        ArrayNode arr = M.createArrayNode();
+        for (ObjectNode c : competitors) arr.add(c);
+
+        ObjectNode out = M.createObjectNode();
+        out.put("status", status);
+        out.put("my_price", myPrice > 0 ? round2(myPrice) : 0.0);
+        out.put("competitor_count", competitorCount);
+        out.put("my_position", myPrice > 0 ? cheaperCount + 1 : 0);
+        if (median != null) out.put("median_price", round2(median)); else out.putNull("median_price");
+        if (min != null) out.put("min_price", round2(min)); else out.putNull("min_price");
+        if (max != null) out.put("max_price", round2(max)); else out.putNull("max_price");
+        if (pricePercentile != null) out.put("price_percentile", pricePercentile); else out.putNull("price_percentile");
+        out.put("free_shipping_pct", competitorCount > 0 ? round2((double) freeShipping / competitorCount * 100.0) : 0.0);
+        out.set("competitors", arr);
+        return out;
     }
 
     // ---------- snapshot por conta (varredura em background) ----------
