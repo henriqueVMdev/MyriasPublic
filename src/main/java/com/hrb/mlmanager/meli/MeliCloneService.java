@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.hrb.mlmanager.meli.MeliClient.MeliResponse;
 import com.hrb.mlmanager.ops.OperationLog;
 import com.hrb.mlmanager.ops.OperationLogRepository;
+import com.hrb.mlmanager.perf.MeliPerformanceService;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -73,14 +74,20 @@ public class MeliCloneService {
     private final MeliAuthService auth;
     private final MeliBulkService bulk;
     private final OperationLogRepository logs;
+    private final MeliPerformanceService perf;
 
-    public MeliCloneService(MeliClient client, MeliAuthService auth,
-                            MeliBulkService bulk, OperationLogRepository logs) {
+    public MeliCloneService(MeliClient client, MeliAuthService auth, MeliBulkService bulk,
+                            OperationLogRepository logs, MeliPerformanceService perf) {
         this.client = client;
         this.auth = auth;
         this.bulk = bulk;
         this.logs = logs;
+        this.perf = perf;
     }
+
+    /** Resultado do read-back pós-criação: confirma que o item existe e é da conta. */
+    private record Verification(String status, String message, JsonNode sellerId,
+                                String itemStatus, JsonNode subStatus, ObjectNode item) {}
 
     private record PreviewItem(ObjectNode item, String itemId, Long ownerUserId, boolean fromCatalog) {}
     private record PositionValue(String id, String name) {}
@@ -208,22 +215,156 @@ public class MeliCloneService {
             applySku(newItemId, sellerCustomField, userId);
         }
         if (description != null && !description.isBlank()) {
-            applyDescription(newItemId, description, userId);
+            // best-effort: uma falha/timeout aqui NÃO pode derrubar o log final — o
+            // item já existe no ML, senão vira fantasma (criado mas fora do histórico).
+            try {
+                applyDescription(newItemId, description, userId);
+            } catch (Exception e) {
+                log.warn("Erro aplicando descricao em {}: {}", newItemId, e.getMessage());
+            }
         }
 
         int compatApplied = applyCompatibilities(newItem, newItemId, compatibilities,
                 positionRestrictions, sourceItemId, userId);
+
+        long verificationUserId = userId != null ? userId : newItem.path("seller_id").asLong();
+        // best-effort: se a verificação estourar (timeout no read-back), NÃO deixa a
+        // exceção subir — o item já existe. Cai pra "pending" → log vira "partial".
+        Verification verification;
+        try {
+            verification = verifyCreatedItem(newItemId, verificationUserId,
+                    newItem.path("user_product_id").asText(null));
+        } catch (Exception e) {
+            log.warn("Verificacao pos-clone falhou em {}: {}", newItemId, e.getMessage());
+            verification = new Verification("pending",
+                    "verificação não concluída: " + e.getMessage(), null, null, null, null);
+        }
+        if (verification.item() != null) {
+            newItem.setAll(verification.item());
+        }
+        String permalink = newItem.path("permalink").asText(null);
+        if (permalink != null && permalink.startsWith("http://")) {
+            newItem.put("permalink", "https://" + permalink.substring("http://".length()));
+        }
 
         ObjectNode meta = MAPPER.createObjectNode();
         meta.put("compat_source_count", compatibilities.size());
         meta.put("compat_applied", compatApplied);
         meta.put("position_count", positionRestrictions.size());
         if (usedDefaultDims != null) meta.set("used_default_dims", usedDefaultDims);
+        meta.put("verification_status", verification.status());
+        meta.put("verification_message", verification.message());
+        meta.set("verified_seller_id", verification.sellerId() == null ? MAPPER.nullNode() : verification.sellerId());
+        meta.put("verified_item_status", verification.itemStatus());
+        meta.set("verified_sub_status", verification.subStatus() == null ? MAPPER.createArrayNode() : verification.subStatus());
         newItem.set("_clone_meta", meta);
 
+        // Snapshot de inventário reflete o item recém-criado sem esperar o próximo scan.
+        if (!"failed".equals(verification.status())) {
+            try {
+                perf.upsertInventoryItem(verificationUserId, newItem);
+            } catch (Exception e) {
+                log.warn("Falha atualizando snapshot após clone {}: {}", newItemId, e.getMessage());
+            }
+        }
+
+        String logStatus = switch (verification.status()) {
+            case "confirmed" -> "success";
+            case "failed" -> "error";
+            default -> "partial";
+        };
+        String errorMessage = "failed".equals(verification.status()) ? verification.message() : null;
         saveCloneLog(userId, batchId, newItemId, friendlyTitle, friendlyListingType, sourceItemId,
-                sellerCustomField, data, newItem, "success", null);
+                sellerCustomField, data, newItem, logStatus, errorMessage);
         return MAPPER.convertValue(newItem, new TypeReference<>() {});
+    }
+
+    /**
+     * Confirma que o item criado pertence à conta e já foi indexado nela. O POST
+     * /items pode responder 201 antes de o User Product aparecer em
+     * /users/{seller}/items/search — não tratamos essa janela como falha, mas
+     * também não mostramos "confirmado" antes do read-back.
+     */
+    private Verification verifyCreatedItem(String itemId, long userId, String userProductId) {
+        ObjectNode lastItem = null;
+        for (int attempt = 0; attempt < 6; attempt++) {
+            if (attempt > 0) sleepQuietly(1000);
+            MeliResponse itemResp;
+            try {
+                itemResp = client.get("/items/" + itemId, userId);
+            } catch (Exception e) {
+                log.warn("Verificacao pos-criacao {} (tentativa {}): {}", itemId, attempt + 1, e.getMessage());
+                continue;
+            }
+            if (itemResp.status() != 200 || itemResp.data() == null || !itemResp.data().isObject()) continue;
+
+            ObjectNode item = (ObjectNode) itemResp.data();
+            lastItem = item;
+            JsonNode actualSellerId = item.get("seller_id");
+            String itemStatus = item.path("status").asText(null);
+            JsonNode subStatus = item.path("sub_status").isArray() ? item.get("sub_status") : MAPPER.createArrayNode();
+            String currentUpId = item.path("user_product_id").asText(null);
+            if (currentUpId == null || currentUpId.isBlank()) currentUpId = userProductId;
+
+            if (actualSellerId == null || !String.valueOf(userId).equals(actualSellerId.asText())) {
+                return new Verification("failed",
+                        "O Mercado Livre criou o item para o vendedor "
+                                + (actualSellerId == null ? "?" : actualSellerId.asText())
+                                + ", não para a conta selecionada " + userId + ".",
+                        actualSellerId, itemStatus, subStatus, null);
+            }
+            if ("closed".equals(itemStatus)) {
+                return new Verification("failed",
+                        "O Mercado Livre fechou o anúncio logo após a criação.",
+                        actualSellerId, itemStatus, subStatus, null);
+            }
+            if ("under_review".equals(itemStatus) || "inactive".equals(itemStatus)) {
+                return new Verification("pending",
+                        "Anúncio criado, mas ainda está em análise pelo Mercado Livre.",
+                        actualSellerId, itemStatus, subStatus, null);
+            }
+            if (currentUpId != null && !currentUpId.isBlank()) {
+                try {
+                    MeliResponse searchResp = client.get("/users/" + userId + "/items/search",
+                            Map.of("user_product_id", currentUpId, "limit", "50"), userId);
+                    JsonNode results = searchResp.data() == null ? null : searchResp.data().path("results");
+                    if (searchResp.status() == 200 && results != null && results.isArray()) {
+                        for (JsonNode r : results) {
+                            if (itemId.equals(r.asText())) {
+                                return new Verification("confirmed",
+                                        "Anúncio confirmado na conta selecionada.",
+                                        actualSellerId, itemStatus, subStatus, item);
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("Busca pos-criacao por user_product_id {}: {}", currentUpId, e.getMessage());
+                }
+            } else {
+                // Sem User Product, o GET autenticado com seller_id correto já confirma o vínculo.
+                return new Verification("confirmed",
+                        "Anúncio confirmado na conta selecionada.",
+                        actualSellerId, itemStatus, subStatus, item);
+            }
+        }
+
+        if (lastItem != null) {
+            String lastStatus = lastItem.path("status").asText(null);
+            JsonNode subStatus = lastItem.path("sub_status").isArray() ? lastItem.get("sub_status") : MAPPER.createArrayNode();
+            // Item ativo/pausado e dono correto = confirmado; exigir o índice
+            // (eventually-consistent) só geraria "aguardando ML" falso num anúncio OK.
+            if ("active".equals(lastStatus) || "paused".equals(lastStatus)) {
+                return new Verification("confirmed",
+                        "Anúncio confirmado na conta selecionada.",
+                        lastItem.get("seller_id"), lastStatus, subStatus, lastItem);
+            }
+            return new Verification("pending",
+                    "O anúncio existe e pertence à conta, mas ainda não apareceu na listagem do Mercado Livre.",
+                    lastItem.get("seller_id"), lastStatus, subStatus, lastItem);
+        }
+        return new Verification("pending",
+                "O Mercado Livre retornou o ID do anúncio, mas ainda não permitiu confirmá-lo por leitura.",
+                MAPPER.getNodeFactory().numberNode(userId), null, MAPPER.createArrayNode(), null);
     }
 
     @Transactional
@@ -231,17 +372,41 @@ public class MeliCloneService {
         if (userIds == null || userIds.isEmpty()) {
             throw new IllegalArgumentException("Nenhuma conta selecionada");
         }
+        // Sequencial de propósito: client/auth/log compartilham a mesma transação
+        // do request; create() já faz deepCopy do data por conta (não perde SKU/desc).
         List<Map<String, Object>> results = new ArrayList<>();
         int success = 0;
+        int confirmed = 0;
+        int pending = 0;
         for (Long userId : userIds) {
             try {
                 Map<String, Object> item = create(data, userId, batchId);
+                @SuppressWarnings("unchecked")
+                Map<String, Object> cloneMeta = (Map<String, Object>) item.getOrDefault("_clone_meta", Map.of());
+                String verificationStatus = String.valueOf(cloneMeta.getOrDefault("verification_status", "pending"));
+                Object verificationMessage = cloneMeta.get("verification_message");
+                boolean verified = !"failed".equals(verificationStatus);
+
                 Map<String, Object> itemOut = new LinkedHashMap<>();
                 itemOut.put("id", item.get("id"));
                 itemOut.put("permalink", item.get("permalink"));
                 itemOut.put("title", item.get("title"));
-                results.add(Map.of("user_id", userId, "success", true, "item", itemOut));
-                success++;
+                itemOut.put("seller_id", item.get("seller_id"));
+                itemOut.put("status", item.get("status"));
+                itemOut.put("user_product_id", item.get("user_product_id"));
+                itemOut.put("verification_status", verificationStatus);
+                itemOut.put("verification_message", verificationMessage);
+
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("user_id", userId);
+                row.put("success", verified);
+                row.put("error", verified ? null : verificationMessage);
+                row.put("item", itemOut);
+                results.add(row);
+
+                if (verified) success++;
+                if ("confirmed".equals(verificationStatus)) confirmed++;
+                else if ("pending".equals(verificationStatus)) pending++;
             } catch (Exception e) {
                 log.warn("Falha clone user={}: {}", userId, e.getMessage());
                 Map<String, Object> err = new LinkedHashMap<>();
@@ -254,6 +419,8 @@ public class MeliCloneService {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("total", userIds.size());
         out.put("success", success);
+        out.put("confirmed", confirmed);
+        out.put("pending", pending);
         out.put("results", results);
         return out;
     }

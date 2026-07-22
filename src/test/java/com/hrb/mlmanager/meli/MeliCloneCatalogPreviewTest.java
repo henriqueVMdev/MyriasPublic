@@ -31,7 +31,8 @@ class MeliCloneCatalogPreviewTest {
                 client,
                 auth,
                 mock(MeliBulkService.class),
-                mock(OperationLogRepository.class)
+                mock(OperationLogRepository.class),
+                mock(com.hrb.mlmanager.perf.MeliPerformanceService.class)
         );
 
         try {
@@ -71,7 +72,8 @@ class MeliCloneCatalogPreviewTest {
                 client,
                 auth,
                 mock(MeliBulkService.class),
-                mock(OperationLogRepository.class)
+                mock(OperationLogRepository.class),
+                mock(com.hrb.mlmanager.perf.MeliPerformanceService.class)
         );
 
         try {
