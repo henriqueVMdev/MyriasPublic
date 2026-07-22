@@ -172,7 +172,12 @@ public class AiAssistantService {
           .append("Nunca diga que uma alteração foi feita antes de o usuário confirmar. ")
           .append("Você não executa nada em segundo plano: a execução acontece na hora, ")
           .append("quando o usuário clica em Confirmar. Nunca diga que está executando ou ")
-          .append("que avisará quando terminar.")
+          .append("que avisará quando terminar. ")
+          .append("Para concorrência (quando as tools estiverem disponíveis): analyze_item_competition ")
+          .append("compara um anúncio nosso com os rivais; inspect_listing abre os detalhes de um ")
+          .append("concorrente vencedor pra explicar a performance; get_category_discovery mostra os ")
+          .append("mais vendidos e termos em alta da categoria. Ao aconselhar, aponte o que o líder faz ")
+          .append("diferente (preço, frete, fotos, atributos, tipo de anúncio) e o que ajustar no nosso.")
           .append(customization.promptContext());
         ObjectNode message = MAPPER.createObjectNode();
         message.put("role", "system");

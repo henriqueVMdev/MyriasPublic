@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.hrb.mlmanager.auth.AppUser;
+import com.hrb.mlmanager.competition.MeliCompetitionService;
 import com.hrb.mlmanager.dashboard.DashboardService;
 import com.hrb.mlmanager.meli.MeliAuthService;
 import com.hrb.mlmanager.meli.MeliBulkService;
@@ -30,6 +31,7 @@ class AiToolRegistryTest {
     private MeliQuestionsService questions;
     private MeliPromotionsService promotions;
     private OperationLogService logs;
+    private MeliCompetitionService competition;
     private AiToolRegistry registry;
 
     @BeforeEach
@@ -40,7 +42,8 @@ class AiToolRegistryTest {
         questions = mock(MeliQuestionsService.class);
         promotions = mock(MeliPromotionsService.class);
         logs = mock(OperationLogService.class);
-        registry = new AiToolRegistry(auth, dashboard, bulk, questions, promotions, logs);
+        competition = mock(MeliCompetitionService.class);
+        registry = new AiToolRegistry(auth, dashboard, bulk, questions, promotions, logs, competition);
     }
 
     private static AppUser userWith(boolean admin, String... perms) {
@@ -309,6 +312,35 @@ class AiToolRegistryTest {
             """);
         String s = registry.summarize("bulk_update_items", args);
         assertTrue(s.contains("price → {\"value\":9.9}"), s);
+    }
+
+    @Test
+    void analyzeItemCompetitionDespachaComContaItemECode() {
+        ObjectNode fake = MAPPER.createObjectNode().put("mode", "catalog").put("status", "competing");
+        when(competition.analyzeItem(10L, "MLB1", "OEM-9")).thenReturn(fake);
+        ObjectNode args = MAPPER.createObjectNode()
+                .put("account_user_id", 10L).put("item_id", "MLB1").put("code", "OEM-9");
+        String out = registry.executeRead("analyze_item_competition", args);
+        assertTrue(out.contains("competing"), out);
+        verify(competition).analyzeItem(10L, "MLB1", "OEM-9");
+    }
+
+    @Test
+    void inspectListingDespachaOItemId() {
+        when(competition.publicListing("MLB2")).thenReturn(MAPPER.createObjectNode().put("title", "Rival"));
+        registry.executeRead("inspect_listing", MAPPER.createObjectNode().put("item_id", "MLB2"));
+        verify(competition).publicListing("MLB2");
+    }
+
+    @Test
+    void toolsDeConcorrenciaSoAparecemComAPermissao() {
+        List<String> sem = toolNames(registry.toolDefinitions(userWith(false, "assistente")));
+        assertFalse(sem.contains("analyze_item_competition"));
+        List<String> com = toolNames(registry.toolDefinitions(userWith(false, "assistente", "concorrencia")));
+        assertTrue(com.contains("analyze_item_competition"));
+        assertTrue(com.contains("inspect_listing"));
+        assertTrue(com.contains("get_competition_report"));
+        assertTrue(com.contains("get_category_discovery"));
     }
 
     @Test

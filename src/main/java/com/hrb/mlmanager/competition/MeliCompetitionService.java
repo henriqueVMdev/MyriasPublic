@@ -366,6 +366,85 @@ public class MeliCompetitionService {
         return ids;
     }
 
+    // ---------- ferramentas do agente de IA ----------
+
+    /** Panorama compacto do snapshot pro agente: resumo + top itens por maior perda de preço. */
+    @Transactional(readOnly = true)
+    public ObjectNode agentReport(long userId, String status, int limit) {
+        ObjectNode snap = load(userId);
+        ObjectNode out = M.createObjectNode();
+        if (snap == null) {
+            out.put("has_snapshot", false);
+            out.put("message", "Sem varredura de concorrência nesta conta. Peça ao usuário para rodar "
+                    + "'Atualizar' na página Concorrência antes de analisar o panorama.");
+            return out;
+        }
+        out.put("has_snapshot", true);
+        out.put("status", snap.path("status").asText("complete"));
+        out.set("scanned_at", snap.get("scanned_at"));
+        out.set("summary", snap.get("summary"));
+
+        List<JsonNode> rows = new ArrayList<>();
+        for (JsonNode it : snap.path("items")) {
+            if (status == null || status.isBlank() || status.equals(it.path("comp_status").asText(null))) rows.add(it);
+        }
+        rows.sort(Comparator.comparingDouble(it ->
+                it.path("price_gap").isNumber() ? -it.path("price_gap").asDouble() : 1));
+        int n = Math.min(Math.max(1, limit), rows.size());
+        ArrayNode items = out.putArray("items");
+        for (int i = 0; i < n; i++) items.add(rows.get(i));
+        out.put("returned", n);
+        return out;
+    }
+
+    /**
+     * Detalhes públicos de qualquer anúncio (nosso ou de concorrente) pra o agente
+     * comparar "o que eles fazem diferente": tipo de anúncio, frete, garantia, nº de
+     * fotos, atributos preenchidos e um trecho da descrição.
+     */
+    public ObjectNode publicListing(String itemId) {
+        ObjectNode out = M.createObjectNode();
+        out.put("item_id", itemId);
+        MeliResponse resp = client.getPublic("/items/" + itemId);
+        if (resp.status() != 200 || resp.data() == null || !resp.data().isObject()) {
+            out.put("error", "Não foi possível obter o anúncio público " + itemId + " (HTTP " + resp.status() + ").");
+            return out;
+        }
+        JsonNode it = resp.data();
+        out.put("title", it.path("title").asText(""));
+        out.put("price", it.path("price").asDouble(0));
+        if (it.hasNonNull("original_price")) out.put("original_price", it.path("original_price").asDouble());
+        out.put("available_quantity", it.path("available_quantity").asInt(0));
+        out.put("sold_quantity", it.path("sold_quantity").asInt(0));
+        out.put("condition", it.path("condition").asText(""));
+        out.put("listing_type_id", it.path("listing_type_id").asText(""));
+        out.put("permalink", it.path("permalink").asText(""));
+        out.put("seller_id", it.path("seller_id").asLong(0));
+        if (it.hasNonNull("health")) out.put("health", it.path("health").asDouble());
+        out.put("warranty", it.path("warranty").asText(""));
+        JsonNode shipping = it.path("shipping");
+        out.put("free_shipping", shipping.path("free_shipping").asBoolean(false));
+        out.put("logistic_type", shipping.path("logistic_type").asText(""));
+        out.put("pictures_count", it.path("pictures").isArray() ? it.path("pictures").size() : 0);
+        ArrayNode attrs = out.putArray("attributes");
+        for (JsonNode a : it.path("attributes")) {
+            String vn = a.path("value_name").asText("");
+            if (vn.isBlank()) continue;
+            attrs.addObject().put("id", a.path("id").asText("")).put("name", a.path("name").asText("")).put("value", vn);
+            if (attrs.size() >= 40) break;
+        }
+        try {
+            MeliResponse d = client.getPublic("/items/" + itemId + "/description");
+            if (d.status() == 200 && d.data() != null) {
+                String plain = d.data().path("plain_text").asText("");
+                out.put("description", plain.length() > 2000 ? plain.substring(0, 2000) : plain);
+            }
+        } catch (Exception ignored) {
+            // descrição é best-effort
+        }
+        return out;
+    }
+
     // ---------- snapshot por conta (varredura em background) ----------
 
     @Transactional(readOnly = true)

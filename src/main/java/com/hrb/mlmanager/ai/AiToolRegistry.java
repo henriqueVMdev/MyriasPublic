@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.hrb.mlmanager.auth.AppUser;
+import com.hrb.mlmanager.competition.MeliCompetitionService;
 import com.hrb.mlmanager.dashboard.DashboardService;
 import com.hrb.mlmanager.meli.MeliAuthService;
 import com.hrb.mlmanager.meli.MeliBulkService;
@@ -32,11 +33,15 @@ public class AiToolRegistry {
             "bulk_update_items", "add_items_to_promotion", "remove_items_from_promotion");
 
     /** Tools que exigem permissão além de `assistente` (leituras livres ficam fora). */
-    private static final Map<String, String> TOOL_PERMISSION = Map.of(
-            "get_dashboard_revenue", "dashboard_revenue",
-            "bulk_update_items", "bulk_edit",
-            "add_items_to_promotion", "manage_promotions",
-            "remove_items_from_promotion", "manage_promotions");
+    private static final Map<String, String> TOOL_PERMISSION = Map.ofEntries(
+            Map.entry("get_dashboard_revenue", "dashboard_revenue"),
+            Map.entry("bulk_update_items", "bulk_edit"),
+            Map.entry("add_items_to_promotion", "manage_promotions"),
+            Map.entry("remove_items_from_promotion", "manage_promotions"),
+            Map.entry("analyze_item_competition", "concorrencia"),
+            Map.entry("get_competition_report", "concorrencia"),
+            Map.entry("get_category_discovery", "concorrencia"),
+            Map.entry("inspect_listing", "concorrencia"));
 
     private static final ArrayNode TOOL_DEFINITIONS = parseDefinitions();
 
@@ -46,16 +51,18 @@ public class AiToolRegistry {
     private final MeliQuestionsService questions;
     private final MeliPromotionsService promotions;
     private final OperationLogService logs;
+    private final MeliCompetitionService competition;
 
     public AiToolRegistry(MeliAuthService auth, DashboardService dashboard, MeliBulkService bulk,
                           MeliQuestionsService questions, MeliPromotionsService promotions,
-                          OperationLogService logs) {
+                          OperationLogService logs, MeliCompetitionService competition) {
         this.auth = auth;
         this.dashboard = dashboard;
         this.bulk = bulk;
         this.questions = questions;
         this.promotions = promotions;
         this.logs = logs;
+        this.competition = competition;
     }
 
     public boolean isWriteTool(String name) { return WRITE_TOOLS.contains(name); }
@@ -117,6 +124,15 @@ public class AiToolRegistry {
                     args.path("status").asText(null), null);
             case "get_operation_logs" -> logs.listOperations(null, null, null, null, null,
                     0, clamp(args.path("limit").asInt(20), 1, 50));
+            case "analyze_item_competition" -> competition.analyzeItem(
+                    requireLong(args, "account_user_id"), requireText(args, "item_id"),
+                    args.path("code").asText(null));
+            case "get_competition_report" -> competition.agentReport(
+                    requireLong(args, "account_user_id"), args.path("status").asText(null),
+                    clamp(args.path("limit").asInt(20), 1, 50));
+            case "get_category_discovery" -> competition.categoryDiscovery(
+                    requireLong(args, "account_user_id"), requireText(args, "category_id"));
+            case "inspect_listing" -> competition.publicListing(requireText(args, "item_id"));
             default -> throw new IllegalArgumentException("Tool desconhecida: " + name);
         };
         return toJsonTruncated(result);
@@ -326,6 +342,10 @@ public class AiToolRegistry {
       {"type":"function","function":{"name":"list_promotions","description":"Promoções/campanhas de uma conta.","parameters":{"type":"object","properties":{"account_user_id":{"type":"integer"}},"required":["account_user_id"]}}},
       {"type":"function","function":{"name":"list_promotion_items","description":"Uma página de anúncios de uma promoção (candidate = elegíveis, started = participando).","parameters":{"type":"object","properties":{"account_user_id":{"type":"integer"},"promotion_id":{"type":"string"},"promotion_type":{"type":"string"},"status":{"type":"string","enum":["candidate","started"]}},"required":["account_user_id","promotion_id","promotion_type"]}}},
       {"type":"function","function":{"name":"get_operation_logs","description":"Últimas operações feitas no painel (auditoria).","parameters":{"type":"object","properties":{"limit":{"type":"integer","description":"1-50, default 20"}}}}},
+      {"type":"function","function":{"name":"analyze_item_competition","description":"Compara UM anúncio nosso com os concorrentes. Catálogo: quem ganha o buy box, minha posição, preço do vencedor, diferença, preço para ganhar e a lista de ofertas rivais (preço/frete/vendas). Avulso: acha concorrentes por código (OEM/PART_NUMBER/GTIN) ou título e devolve minha posição de preço, mediana, mais barato e a lista. A resposta traz o category_id (use em get_category_discovery) e os item_id dos rivais (use em inspect_listing).","parameters":{"type":"object","properties":{"account_user_id":{"type":"integer","description":"conta dona do anúncio (de list_accounts ou get_items_by_sku)"},"item_id":{"type":"string"},"code":{"type":"string","description":"opcional: força a busca de concorrentes por um código específico (ex.: código original OEM)"}},"required":["account_user_id","item_id"]}}},
+      {"type":"function","function":{"name":"get_competition_report","description":"Panorama por conta da última varredura de concorrência: resumo (quantos ganhando/perdendo o buy box) e os anúncios ordenados pela MAIOR perda (maior diferença de preço vs vencedor). Use para achar onde estamos perdendo mais. Se não houver varredura, avisa para o usuário rodar 'Atualizar' na página Concorrência.","parameters":{"type":"object","properties":{"account_user_id":{"type":"integer"},"status":{"type":"string","enum":["competing","winning","sharing","not_listed"],"description":"filtra por situação; competing = perdendo o buy box"},"limit":{"type":"integer","description":"1-50, default 20"}},"required":["account_user_id"]}}},
+      {"type":"function","function":{"name":"get_category_discovery","description":"Contexto de mercado de uma categoria: mais vendidos (ranking com item_id/preço/vendas) e termos de busca em alta. Pegue os item_id dos mais vendidos e chame inspect_listing para descobrir o que os líderes fazem diferente.","parameters":{"type":"object","properties":{"account_user_id":{"type":"integer"},"category_id":{"type":"string"}},"required":["account_user_id","category_id"]}}},
+      {"type":"function","function":{"name":"inspect_listing","description":"Detalhes públicos de QUALQUER anúncio (nosso ou de concorrente) para comparar o que muda: preço, vendas, tipo de anúncio (clássico/premium), frete grátis, garantia, nº de fotos, atributos preenchidos e trecho da descrição. Use nos rivais vencedores para explicar a performance e sugerir melhorias no nosso.","parameters":{"type":"object","properties":{"item_id":{"type":"string"}},"required":["item_id"]}}},
       {"type":"function","function":{"name":"bulk_update_items","description":"ALTERAÇÃO em massa de anúncios (preço, estoque, status active/paused, título). NÃO executa: gera um pedido de confirmação pro usuário.","parameters":{"type":"object","properties":{"groups":{"type":"array","items":{"type":"object","properties":{"user_id":{"type":"integer"},"item_ids":{"type":"array","items":{"type":"string"}}},"required":["user_id","item_ids"]}},"updates":{"type":"object","properties":{"price":{"type":"number"},"available_quantity":{"type":"integer"},"status":{"type":"string","enum":["active","paused"]},"title":{"type":"string"},"pictures":{"type":"array","description":"substitui TODAS as fotos, na ordem enviada (a primeira vira capa); cada item é {\\"source\\":\\"url da imagem\\"} para foto nova ou {\\"id\\":\\"id de foto existente\\"} para manter/reordenar","items":{"type":"object"}},"keep_cover_photo":{"type":"boolean","description":"true mantém a capa atual de cada anúncio e insere as fotos enviadas depois dela"}}},"sku":{"type":"string","description":"SKU de referência, só pro histórico"}},"required":["groups","updates"]}}},
       {"type":"function","function":{"name":"add_items_to_promotion","description":"ALTERAÇÃO: inclui anúncios numa promoção (deal_price obrigatório em promoções tipo DEAL/LIGHTNING). Gera confirmação.","parameters":{"type":"object","properties":{"account_user_id":{"type":"integer"},"promotion_id":{"type":"string"},"promotion_type":{"type":"string"},"items":{"type":"array","items":{"type":"object","properties":{"item_id":{"type":"string"},"deal_price":{"type":"number"}},"required":["item_id"]}}},"required":["account_user_id","promotion_id","promotion_type","items"]}}},
       {"type":"function","function":{"name":"remove_items_from_promotion","description":"ALTERAÇÃO: remove anúncios de uma promoção. Gera confirmação.","parameters":{"type":"object","properties":{"account_user_id":{"type":"integer"},"promotion_id":{"type":"string"},"promotion_type":{"type":"string"},"item_ids":{"type":"array","items":{"type":"string"}}},"required":["account_user_id","promotion_id","promotion_type","item_ids"]}}}
