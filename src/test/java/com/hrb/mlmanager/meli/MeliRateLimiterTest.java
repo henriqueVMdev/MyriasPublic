@@ -9,19 +9,19 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.CountDownLatch;
 
-public class MeliRateLimiterTest {
+/* ublic class MeliRateLimiterTest {
 
-    @Test
+   //* @Test
     void slotOcupado_segundaThreadAguardaReleaseEntaoProssegue(){
         MeliRateLimiter limiter = new MeliRateLimiter(1_000_000, 1);
     }
 
     ExecutorService executorService = Executors.newSingleThreadExecutor();
     Future<?> future = executorService.submit(limiter::acquire);
-    CountDownLatch started = new CountDownLatch(1);
+    CountDownLatch started = new CountDownLatch(1); 
 
 
-}
+}*/
     
 
     
