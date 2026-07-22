@@ -11,6 +11,8 @@ export interface Promotion {
   fixed_percentage: number | null;
   sub_type: string | null;
   price_choice: boolean;
+  candidate_count: number | null; // elegíveis
+  started_count: number | null; // participando
 }
 
 export interface Coupon {
@@ -34,6 +36,8 @@ export interface PromotionItem {
   title: string | null;
   sku: string;
   thumbnail: string | null;
+  category_id: string | null;
+  category_name: string | null;
   status: string | null; // "candidate" | "started"
   current_price: number | null; // preço cheio ("de")
   promo_price: number | null; // preço promocional (escolhido/sugerido/fixo)
@@ -125,16 +129,36 @@ export async function getPromotionItems(
   promotionId: string,
   promotionType: string,
   status?: string,
-  searchAfter?: string
+  searchAfter?: string,
+  enrichLimits = true
 ): Promise<PromotionItemsPage> {
   const params: Record<string, string> = { promotion_type: promotionType };
   if (status) params.status = status;
   if (searchAfter) params.search_after = searchAfter;
+  // Varredura de categorias pede enrich_limits=false pra não disparar 1 chamada/item no LIGHTNING.
+  if (!enrichLimits) params.enrich_limits = "false";
   const { data } = await api.get<PromotionItemsPage>(
     `/promotions/${encodeURIComponent(promotionId)}/items`,
     { params }
   );
   return data;
+}
+
+// Limites reais de LIGHTNING (min/máx/sugerido) buscados sob demanda ao abrir uma categoria.
+export interface LightningLimit {
+  min_price: number | null;
+  max_price: number | null;
+  suggested_price: number | null;
+}
+export async function enrichLightning(
+  promotionId: string,
+  itemIds: string[]
+): Promise<Record<string, LightningLimit>> {
+  const { data } = await api.post<{ limits: Record<string, LightningLimit> }>(
+    `/promotions/${encodeURIComponent(promotionId)}/enrich-lightning`,
+    { item_ids: itemIds }
+  );
+  return data.limits;
 }
 
 export async function searchPromotionItems(

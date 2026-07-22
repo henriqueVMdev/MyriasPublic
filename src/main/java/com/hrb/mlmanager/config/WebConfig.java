@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
@@ -14,7 +15,8 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * Espelha o add_middleware(CORSMiddleware, ...) do FastAPI.
  */
 @Configuration
-@EnableAsync   // habilita o refresh de snapshot em background (PerfRefreshRunner)
+@EnableAsync        // refresh de snapshot em background (PerfRefreshRunner)
+@EnableScheduling   // auditoria noturna de qualidade (QualityJobs)
 public class WebConfig implements WebMvcConfigurer {
 
     private final String frontendUrl;

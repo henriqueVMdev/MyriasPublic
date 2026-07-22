@@ -483,6 +483,13 @@ onMounted(async () => {
           </div>
         </div>
 
+        <!-- Contagem elegíveis / participando (paging.total, sem baixar os itens) -->
+        <div v-if="p.candidate_count != null || p.started_count != null" class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+          <span v-if="p.candidate_count != null">elegíveis: {{ p.candidate_count.toLocaleString("pt-BR") }}</span>
+          <span v-if="p.candidate_count != null && p.started_count != null"> / </span>
+          <span v-if="p.started_count != null">participando: {{ p.started_count.toLocaleString("pt-BR") }}</span>
+        </div>
+
         <div class="flex items-center gap-3 mt-4 text-xs text-gray-500">
           <span v-if="p.start_date || p.finish_date" class="inline-flex items-center gap-1" title="Início → término da promoção">
             <CalendarClock :size="13" />

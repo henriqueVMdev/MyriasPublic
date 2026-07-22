@@ -44,11 +44,14 @@ public class ItemsController {
     private final MeliItemsService service;
     private final MeliClient client;
     private final MeliAuthService auth;
+    private final com.hrb.mlmanager.quality.QualityJobs quality;
 
-    public ItemsController(MeliItemsService service, MeliClient client, MeliAuthService auth) {
+    public ItemsController(MeliItemsService service, MeliClient client, MeliAuthService auth,
+                           com.hrb.mlmanager.quality.QualityJobs quality) {
         this.service = service;
         this.client = client;
         this.auth = auth;
+        this.quality = quality;
     }
 
     public record StatusUpdate(String status) {}
@@ -139,6 +142,7 @@ public class ItemsController {
         if (r.status() != 200) {
             throw new ResponseStatusException(HttpStatusCode.valueOf(r.status()), errorDetail(r.data()));
         }
+        quality.enqueueItemRevalidation(auth.requireActiveAccountId(), List.of(itemId), "item_update");
         Map<String, Object> out = new HashMap<>();
         out.put("ok", true);
         out.put("ignored_attrs", r.ignoredAttrs());
@@ -151,7 +155,11 @@ public class ItemsController {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "status deve ser active, paused ou closed");
         }
-        return resultMap(service.updateStatus(itemId, body.status()));
+        UpdateResult r = service.updateStatus(itemId, body.status());
+        if (r.status() == 200) {
+            quality.enqueueItemRevalidation(auth.requireActiveAccountId(), List.of(itemId), "status_update");
+        }
+        return resultMap(r);
     }
 
     @PutMapping("/{itemId}/description")
@@ -161,7 +169,11 @@ public class ItemsController {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "plain_text é obrigatório e limitado a 50000 caracteres");
         }
-        return service.updateDescription(itemId, text);
+        MeliResponse resp = service.updateDescription(itemId, text);
+        if (resp.status() == 200 || resp.status() == 201) {
+            quality.enqueueItemRevalidation(auth.requireActiveAccountId(), List.of(itemId), "description_update");
+        }
+        return resp;
     }
 
     @PutMapping("/{itemId}/pictures")
@@ -169,7 +181,11 @@ public class ItemsController {
         if (body.pictures() == null || !body.pictures().isArray() || body.pictures().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "pictures não pode ser vazio");
         }
-        return resultMap(service.updatePictures(itemId, body.pictures()));
+        UpdateResult r = service.updatePictures(itemId, body.pictures());
+        if (r.status() == 200) {
+            quality.enqueueItemRevalidation(auth.requireActiveAccountId(), List.of(itemId), "pictures_update");
+        }
+        return resultMap(r);
     }
 
     // ---- Internos ------------------------------------------------------------

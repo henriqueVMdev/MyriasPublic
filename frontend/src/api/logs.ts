@@ -8,6 +8,9 @@ export interface OperationLog {
   response?: Record<string, unknown> | null;
   status: string;
   error_message: string | null;
+  // item_ids que falharam — vem sempre (mesmo na listagem sem response), pra
+  // marcar só o anúncio com erro em vez do status do grupo inteiro.
+  failed_ids?: string[];
   batch_id?: string | null;
   actor?: string | null;
   user_id?: number | null;

@@ -19,6 +19,7 @@ const PERM_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
   performance: "Performance",
   repetidos: "Anúncios Repetidos",
+  quality: "Anúncios Incompletos",
   bulk: "Edição por SKU",
   clone: "Copiar Anúncio",
   promocoes: "Promoções",

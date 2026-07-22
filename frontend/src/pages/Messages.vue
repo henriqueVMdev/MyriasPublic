@@ -19,6 +19,7 @@ import {
   ArrowLeft,
   Package,
   ExternalLink,
+  Check,
 } from "lucide-vue-next";
 
 const store = useMessagesStore();
@@ -30,6 +31,8 @@ const thread = ref<Thread | null>(null);
 const threadLoading = ref(false);
 const replyText = ref("");
 const sending = ref(false);
+const markingRead = ref(false);
+const sendError = ref("");
 
 const ACCOUNT_COLORS = [
   "bg-blue-100 text-blue-700",
@@ -49,6 +52,42 @@ const filtered = computed(() => {
     (c) => c.account.user_id === filterAccount.value
   );
 });
+
+const maxMessageLength = computed(
+  () => thread.value?.seller_max_message_length || 350
+);
+
+const conversationBlocked = computed(() => {
+  const status = thread.value?.conversation_status;
+  if (typeof status === "string") return status.toLowerCase() === "blocked";
+  return status?.status?.toLowerCase() === "blocked";
+});
+
+const conversationBlockMessage = computed(() => {
+  const status = thread.value?.conversation_status;
+  const substatus =
+    typeof status === "object" && status ? status.substatus?.toLowerCase() : "";
+
+  if (substatus === "blocked_by_time") {
+    return "O prazo permitido pelo Mercado Livre para responder esta venda terminou.";
+  }
+  if (substatus === "blocked_by_buyer") {
+    return "O comprador bloqueou novas mensagens nesta conversa.";
+  }
+  if (substatus === "blocked_by_fulfillment") {
+    return "O Mercado Livre não permite mensagens para esta modalidade de entrega.";
+  }
+  return "O Mercado Livre bloqueou novas respostas nesta conversa.";
+});
+
+function errorMessage(err: any, fallback: string): string {
+  const detail = err?.response?.data?.detail;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (typeof detail?.message === "string" && detail.message.trim()) {
+    return detail.message;
+  }
+  return err?.message || fallback;
+}
 
 function formatElapsed(iso: string | null): string {
   if (!iso) return "—";
@@ -79,11 +118,12 @@ async function selectConversation(c: Conversation) {
   selected.value = c;
   thread.value = null;
   replyText.value = "";
+  sendError.value = "";
   threadLoading.value = true;
   try {
-    thread.value = await getThread(c.pack_id, c.account.user_id);
-    // Como abrir marca como lido no ML, removemos da lista de não-lidas local
-    store.removeConversation(c.account.user_id, c.pack_id);
+    // Abrir só lê — não marca como lido no ML nem remove do painel.
+    // Isso só acontece quando o usuário clica em "Marcar como lida".
+    thread.value = await getThread(c.pack_id, c.account.user_id, false);
   } catch (err: any) {
     alert(
       "Erro ao carregar conversa: " +
@@ -99,22 +139,43 @@ function backToList() {
   thread.value = null;
 }
 
+async function markRead() {
+  if (!selected.value) return;
+  markingRead.value = true;
+  try {
+    // mark_read=1 → ML marca como lido agora
+    await getThread(selected.value.pack_id, selected.value.account.user_id, true);
+    store.removeConversation(selected.value.account.user_id, selected.value.pack_id);
+    backToList();
+  } catch (err: any) {
+    alert(
+      "Erro ao marcar como lida: " +
+        (err?.response?.data?.detail || err?.message || "desconhecido")
+    );
+  } finally {
+    markingRead.value = false;
+  }
+}
+
 async function submitReply() {
   if (!auth.can("reply_messages")) return;
   if (!selected.value || !thread.value) return;
   const text = replyText.value.trim();
   if (!text) return;
-  const buyerId = thread.value.buyer_id || selected.value.buyer_id;
-  if (!buyerId) {
-    alert("Não foi possível identificar o comprador desta conversa.");
+  if (conversationBlocked.value) {
+    sendError.value = conversationBlockMessage.value;
     return;
   }
+  if (text.length > maxMessageLength.value) {
+    sendError.value = `A mensagem ultrapassa o limite de ${maxMessageLength.value} caracteres.`;
+    return;
+  }
+  sendError.value = "";
   sending.value = true;
   try {
     await sendReply(
       selected.value.pack_id,
       selected.value.account.user_id,
-      buyerId,
       text
     );
     replyText.value = "";
@@ -124,10 +185,7 @@ async function submitReply() {
       selected.value.account.user_id
     );
   } catch (err: any) {
-    alert(
-      "Erro ao enviar: " +
-        (err?.response?.data?.detail || err?.message || "desconhecido")
-    );
+    sendError.value = errorMessage(err, "Não foi possível enviar a mensagem.");
   } finally {
     sending.value = false;
   }
@@ -341,6 +399,17 @@ onUnmounted(() => {
             Comprador: {{ selected.buyer_nickname || thread?.buyer_id || selected.buyer_id || "—" }}
           </p>
         </div>
+        <button
+          type="button"
+          @click="markRead"
+          :disabled="markingRead || threadLoading"
+          title="Marca como lida no Mercado Livre e remove do painel"
+          class="flex-shrink-0 px-3.5 py-2 text-sm font-medium bg-brand-yellow text-brand-black rounded-xl hover:brightness-95 flex items-center gap-2 disabled:opacity-50 transition-all shadow-sm"
+        >
+          <Loader2 v-if="markingRead" :size="14" class="animate-spin" />
+          <Check v-else :size="14" />
+          Marcar como lida
+        </button>
       </div>
 
       <div class="p-4 max-h-[60vh] overflow-y-auto space-y-3">
@@ -377,19 +446,36 @@ onUnmounted(() => {
       </div>
 
       <div class="p-4 border-t space-y-2">
+        <div
+          v-if="conversationBlocked"
+          class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+        >
+          {{ conversationBlockMessage }}
+        </div>
+        <div
+          v-if="sendError"
+          class="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+        >
+          {{ sendError }}
+        </div>
         <textarea
           v-model="replyText"
+          @input="sendError = ''"
           rows="3"
           :placeholder="auth.can('reply_messages') ? 'Digite sua resposta...' : 'Você não tem permissão para responder mensagens'"
+          :maxlength="maxMessageLength"
           class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-meli-blue resize-y
                  disabled:bg-gray-100 disabled:cursor-not-allowed dark:disabled:bg-zinc-800"
-          :disabled="sending || !auth.can('reply_messages')"
+          :disabled="sending || conversationBlocked || !auth.can('reply_messages')"
         ></textarea>
-        <div class="flex gap-2">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-xs text-gray-400">
+            {{ replyText.length }}/{{ maxMessageLength }}
+          </span>
           <button
             type="button"
             @click="submitReply"
-            :disabled="sending || !replyText.trim() || threadLoading || !auth.can('reply_messages')"
+            :disabled="sending || conversationBlocked || !replyText.trim() || threadLoading || !auth.can('reply_messages')"
             :title="!auth.can('reply_messages') ? 'Você não tem permissão para responder mensagens' : undefined"
             class="px-5 py-2 bg-meli-blue text-brand-yellow font-semibold rounded-xl text-sm hover:bg-meli-blue-dark transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
           >

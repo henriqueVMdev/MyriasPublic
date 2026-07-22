@@ -186,6 +186,9 @@ export interface AffectedAd {
   status: string;
   // "Excluído" / "Fechado" / "Falha ao excluir" — só em operações de exclusão.
   actionLabel?: string | null;
+  // Motivo amigavel devolvido pelo ML para falhas individuais em promocoes.
+  errorMessage?: string | null;
+  errorCode?: string | null;
   // Mudanças campo a campo (status, preço, estoque…) com antes → depois.
   changes?: AdChange[];
 }
@@ -203,6 +206,8 @@ export function affectedAds(op: OperationGroup): AffectedAd[] {
       existing.title = existing.title || ad.title;
       existing.listingType = existing.listingType || ad.listingType;
       existing.actionLabel = existing.actionLabel || ad.actionLabel;
+      existing.errorMessage = existing.errorMessage || ad.errorMessage;
+      existing.errorCode = existing.errorCode || ad.errorCode;
       // Acumula mudanças de sub-operações distintas (campos + atributos + …),
       // deduplicando por campo (a última vence).
       if (ad.changes?.length) {
@@ -237,13 +242,17 @@ export function affectedAds(op: OperationGroup): AffectedAd[] {
       // o status geral da linha (ex.: "partial") e aparecia como falha mesmo
       // quando entrou na promoção. Fallback pro status da linha (a lista não
       // carrega response — só o detalhe traz).
-      const itemStatus = perItemStatus(c);
+      const itemResults = perItemResults(c);
       for (const g of p.groups) {
         const items = Array.isArray(g.items)
           ? g.items
           : (g.item_ids || []).map((id: string) => ({ id, title: null }));
         for (const it of items) {
-          const st = itemStatus.get(it.id) ?? c.status;
+          const result = itemResults.get(it.id);
+          // Item listado como falha → erro. Senão: numa linha "partial" os não
+          // listados deram certo (sucesso); numa linha inteira ok/erro (ex.:
+          // delete, que loga 1 linha por anúncio) herda o status da linha.
+          const st = result?.status ?? (c.status === "partial" ? "success" : c.status);
           push({
             mlb: it.id ?? null,
             // SKU por item quando o payload traz (ex.: promoções, onde cada
@@ -252,6 +261,8 @@ export function affectedAds(op: OperationGroup): AffectedAd[] {
             title: it.title ?? null,
             userId: g.user_id ?? null,
             status: st,
+            errorMessage: result?.errorMessage ?? null,
+            errorCode: result?.errorCode ?? null,
             actionLabel: deleteActionLabel(c.operation_type, p.action, st),
             changes: adChanges(c.operation_type, updates, it),
           });
@@ -266,17 +277,124 @@ export function affectedAds(op: OperationGroup): AffectedAd[] {
   return [...byMlb.values()];
 }
 
-/** Status real por item (MLB → "success"/"error") a partir de response.results.
- * Vazio quando a linha não traz response (ex.: na listagem, só no detalhe). */
-function perItemStatus(c: OperationLog): Map<string, "success" | "error"> {
-  const map = new Map<string, "success" | "error">();
-  const results = (c.response as Record<string, any> | null | undefined)?.results;
-  if (Array.isArray(results)) {
-    for (const r of results) {
-      if (r?.item_id) map.set(r.item_id, r.ok ? "success" : "error");
+/** Mapa dos itens que falharam (MLB → status/erro), reunindo promoções
+ * (response.results), bulk (response.errors / per_account[].errors) e o
+ * failed_ids leve que a listagem traz mesmo sem a response completa.
+ * Itens fora do mapa não necessariamente falharam — ver uso em affectedAds. */
+function perItemResults(c: OperationLog): Map<string, {
+  status: "success" | "error";
+  errorMessage: string | null;
+  errorCode: string | null;
+}> {
+  const map = new Map<string, {
+    status: "success" | "error";
+    errorMessage: string | null;
+    errorCode: string | null;
+  }>();
+  const resp = (c.response as Record<string, any> | null | undefined) || {};
+  // Promoções: results[{item_id, ok}] — traz ok e falha com motivo do ML.
+  if (Array.isArray(resp.results)) {
+    for (const r of resp.results) {
+      if (!r?.item_id) continue;
+      const failure = r.ok ? { message: null, code: null } : friendlyMeliError(r);
+      map.set(r.item_id, {
+        status: r.ok ? "success" : "error",
+        errorMessage: failure.message,
+        errorCode: failure.code,
+      });
     }
   }
+  // Bulk (conta única: errors[]; multi-conta: per_account[].errors[]).
+  const bulkErrors = [
+    ...(Array.isArray(resp.errors) ? resp.errors : []),
+    ...((Array.isArray(resp.per_account) ? resp.per_account : []).flatMap(
+      (a: any) => (Array.isArray(a?.errors) ? a.errors : [])
+    )),
+  ];
+  for (const e of bulkErrors) {
+    if (!e?.item_id || map.has(e.item_id)) continue;
+    map.set(e.item_id, { status: "error", errorMessage: bulkErrorText(e.error), errorCode: null });
+  }
+  // Listagem: response completa é omitida, mas failed_ids sempre vem.
+  for (const id of (c.failed_ids || [])) {
+    if (!map.has(id)) map.set(id, { status: "error", errorMessage: null, errorCode: null });
+  }
   return map;
+}
+
+// Tradução dos códigos de erro de bulk mais comuns do ML pra algo legível.
+const BULK_ERROR_MESSAGES: Record<string, string> = {
+  "item.user_product.repeated.conflict":
+    "Alteração negada pelo Mercado Livre, anúncio idêntico a outro.",
+  "item.attribute.invalid":
+    "Valor de atributo inválido para o Mercado Livre (ex.: texto num campo que espera número).",
+};
+
+/** Texto amigável de um erro de bulk (ML devolve dict {message, error, cause[]} ou string). */
+function bulkErrorText(error: unknown): string | null {
+  if (!error) return null;
+  if (typeof error === "string") return error;
+  if (typeof error !== "object") return String(error);
+  const e = error as Record<string, any>;
+  const causes = Array.isArray(e.cause) ? e.cause : [];
+  const knownCode = causes.map((c: any) => c?.code).find((c: string) => BULK_ERROR_MESSAGES[c]);
+  if (knownCode) return BULK_ERROR_MESSAGES[knownCode];
+  const cause = causes.map((c: any) => c?.message || c?.code).filter(Boolean).join("; ");
+  const raw = cause || e.message || e.error || "";
+  return raw ? `O Mercado Livre rejeitou: ${raw}` : null;
+}
+
+const MELI_ERROR_MESSAGES: Record<string, string> = {
+  ERROR_CREDIBILITY_DISCOUNTED_PRICE:
+    "O Mercado Livre rejeitou o preço promocional por estar fora da faixa considerada válida para este anúncio. Confira os limites mínimo e máximo atualizados antes de tentar novamente.",
+  OFFER_ALREADY_EXISTS:
+    "Este anúncio já possui uma oferta nesta promoção.",
+};
+
+/** Traduz o retorno tecnico do seller-promotions sem esconder o codigo do ML. */
+function friendlyMeliError(result: Record<string, any>): { message: string; code: string | null } {
+  const data = result?.data;
+  const raw = [result?.error, data?.message, data?.error, typeof data === "string" ? data : null]
+    .find((v) => typeof v === "string" && v.trim()) || "";
+  const causes = Array.isArray(data?.cause) ? data.cause : [];
+  const causeCode = causes.map((c: any) => c?.code).find(Boolean);
+  const knownCode = Object.keys(MELI_ERROR_MESSAGES).find((code) =>
+    causeCode === code || raw.includes(code)
+  );
+  if (knownCode) return { message: MELI_ERROR_MESSAGES[knownCode], code: knownCode };
+  return {
+    message: raw ? `O Mercado Livre rejeitou este anúncio: ${raw}` : "O Mercado Livre rejeitou este anúncio sem informar o motivo.",
+    code: causeCode || null,
+  };
+}
+
+export interface OperationDisplayStats {
+  total: number;
+  success: number;
+  error: number;
+  isPromotion: boolean;
+}
+
+/** Contagem por anuncio para promocoes; demais operacoes mantem a contagem do grupo. */
+export function operationDisplayStats(op: OperationGroup): OperationDisplayStats {
+  const isPromotion = op.children.some((c) =>
+    c.operation_type === "promotion_add" || c.operation_type === "promotion_remove"
+  );
+  if (!isPromotion) return { total: op.total, success: op.success, error: op.error, isPromotion };
+
+  const ads = affectedAds(op);
+  const exact = ads.filter((ad) => ad.status === "success" || ad.status === "error");
+  if (exact.length === ads.length && ads.length) {
+    const error = ads.filter((ad) => ad.status === "error").length;
+    return { total: ads.length, success: ads.length - error, error, isPromotion };
+  }
+
+  const failed = op.children.reduce((sum, child) => {
+    const match = child.error_message?.match(/(\d+)\s+item\(ns\)\s+falharam/i);
+    return sum + (match ? Number(match[1]) : 0);
+  }, 0);
+  const total = ads.length || op.total;
+  return { total, success: Math.max(0, total - failed), error: failed, isPromotion };
 }
 
 /** Rótulo de ação pra exclusões: "Excluído" / "Fechado" / "Falha ao excluir". */
@@ -284,6 +402,29 @@ function deleteActionLabel(opType: string, action: unknown, status: string): str
   if (opType !== "delete_listing") return null;
   if (status === "error") return "Falha ao excluir";
   return action === "closed" ? "Fechado" : "Excluído";
+}
+
+// Rótulos amigáveis dos atributos que sabemos nomear (medidas de embalagem nos
+// vários formatos que o ML usa). Os demais caem no próprio id.
+const ATTR_LABELS: Record<string, string> = {
+  seller_package_height: "Altura (embalagem)",
+  seller_package_width: "Largura (embalagem)",
+  seller_package_length: "Comprimento (embalagem)",
+  seller_package_weight: "Peso (embalagem)",
+  PACKAGE_HEIGHT: "Altura (embalagem)",
+  PACKAGE_WIDTH: "Largura (embalagem)",
+  PACKAGE_LENGTH: "Comprimento (embalagem)",
+  PACKAGE_WEIGHT: "Peso (embalagem)",
+};
+
+/** Valor de um atributo enviado no PUT: value_name, ou number+unit, ou "Não se aplica". */
+function fmtAttrValue(a: Record<string, any>): string {
+  if (a.value_name) return String(a.value_name);
+  const vs = a.value_struct;
+  if (vs && typeof vs === "object" && vs.number != null) {
+    return `${vs.number} ${vs.unit || ""}`.trim();
+  }
+  return "Não se aplica";
 }
 
 /** Mudanças campo a campo de um item, com antes → depois quando o "antes" existe. */
@@ -297,6 +438,21 @@ function adChanges(opType: string, updates: Record<string, unknown>, it: Record<
     const from = f in before ? fmtFieldValue(f, before[f]) : null;
     if (to === null && from === null) continue;
     out.push({ field: f, label: FIELD_LABELS[f] || f, from, to });
+  }
+
+  // Atributos aplicados (medidas de embalagem, atributos de categoria…). O bulk
+  // não manda "antes" de atributo — mostramos só o valor definido ("depois").
+  // SELLER_SKU é ignorado: já aparece como "SKU interno" pelo campo escalar.
+  if (Array.isArray(updates.attributes)) {
+    for (const a of updates.attributes as Record<string, any>[]) {
+      if (!a?.id || a.id === "SELLER_SKU") continue;
+      out.push({
+        field: `attr:${a.id}`,
+        label: ATTR_LABELS[a.id] || a.id,
+        from: null,
+        to: fmtAttrValue(a),
+      });
+    }
   }
 
   // Promoção: o "preço na promoção" enviado por anúncio (deal_price).

@@ -50,9 +50,17 @@ const answeredCounts = ref<Record<string, number>>({});
 const accounts = computed(() =>
   status.value === "UNANSWERED" ? store.accountsList : answeredAccounts.value
 );
-const counts = computed(() =>
-  status.value === "UNANSWERED" ? store.accountCounts : answeredCounts.value
-);
+const counts = computed(() => {
+  if (status.value !== "UNANSWERED") return answeredCounts.value;
+  // Deriva da lista já filtrada (tombstones/ocultadas removidas). Os counts do
+  // backend não descontam esses, então o chip por conta ficava maior que a lista
+  // real (ex.: "Todas (0)" mas "HRBIMPORTS (3)").
+  const c: Record<number, number> = {};
+  for (const q of questions.value) {
+    c[q.account.user_id] = (c[q.account.user_id] || 0) + 1;
+  }
+  return c;
+});
 
 // Estatísticas / gráficos
 const statsPeriod = ref<"day" | "month">("day");

@@ -4,11 +4,14 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.hrb.mlmanager.auth.PanelSecurity;
+import com.hrb.mlmanager.quality.QualityJobs;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,11 +30,35 @@ public class BulkController {
     private final MeliBulkService service;
     private final MeliAuthService auth;
     private final PanelSecurity security;
+    private final QualityJobs quality;
 
-    public BulkController(MeliBulkService service, MeliAuthService auth, PanelSecurity security) {
+    public BulkController(MeliBulkService service, MeliAuthService auth,
+                          PanelSecurity security, QualityJobs quality) {
         this.service = service;
         this.auth = auth;
         this.security = security;
+        this.quality = quality;
+    }
+
+    /** Revalida a qualidade dos itens que passaram (espelho de _enqueue_successful_groups). */
+    private void enqueueSuccessfulGroups(List<Map<String, Object>> groups, Map<String, Object> result, String source) {
+        Set<String> failed = new HashSet<>();
+        if (result.get("errors") instanceof List<?> errors) {
+            for (Object e : errors) {
+                if (e instanceof Map<?, ?> m && m.get("item_id") != null) failed.add(String.valueOf(m.get("item_id")));
+            }
+        }
+        for (Map<String, Object> group : groups) {
+            if (!(group.get("item_ids") instanceof List<?> ids)) continue;
+            List<String> successful = new ArrayList<>();
+            for (Object id : ids) {
+                String s = String.valueOf(id);
+                if (!failed.contains(s)) successful.add(s);
+            }
+            if (!successful.isEmpty()) {
+                quality.enqueueItemRevalidation(((Number) group.get("user_id")).longValue(), successful, source);
+            }
+        }
     }
 
     public record BulkUpdate(
@@ -100,7 +127,13 @@ public class BulkController {
         if (body.itemIds() == null || body.itemIds().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "item_ids nao pode ser vazio");
         }
-        return service.bulkUpdate(body.itemIds(), objectUpdates(body.updates()), auth.requireActiveAccountId());
+        long userId = auth.requireActiveAccountId();
+        Map<String, Object> result = service.bulkUpdate(body.itemIds(), objectUpdates(body.updates()), userId);
+        Map<String, Object> group = new LinkedHashMap<>();
+        group.put("user_id", userId);
+        group.put("item_ids", body.itemIds());
+        enqueueSuccessfulGroups(List.of(group), result, "bulk_update");
+        return result;
     }
 
     @PostMapping("/update-by-sku")
@@ -118,8 +151,11 @@ public class BulkController {
         if (body.groups() == null || body.groups().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "groups nao pode ser vazio");
         }
-        return service.bulkUpdateMultiAccount(groups(body.groups()), objectUpdates(body.updates()),
+        List<Map<String, Object>> gs = groups(body.groups());
+        Map<String, Object> result = service.bulkUpdateMultiAccount(gs, objectUpdates(body.updates()),
                 body.sku(), body.titles(), body.before(), body.batchId());
+        enqueueSuccessfulGroups(gs, result, "bulk_update_multi");
+        return result;
     }
 
     @GetMapping("/description/item/{itemId}")
@@ -135,7 +171,10 @@ public class BulkController {
         if (body.description() == null || body.description().isBlank()) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "description e obrigatorio");
         }
-        return service.bulkUpdateDescriptionMulti(groups(body.groups()), body.description(), body.sku(), body.batchId());
+        List<Map<String, Object>> gs = groups(body.groups());
+        Map<String, Object> result = service.bulkUpdateDescriptionMulti(gs, body.description(), body.sku(), body.batchId());
+        enqueueSuccessfulGroups(gs, result, "description_update_multi");
+        return result;
     }
 
     @GetMapping("/debug/item-package/{itemId}")
@@ -171,8 +210,11 @@ public class BulkController {
         if (body.productIds() == null || body.productIds().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "product_ids nao pode ser vazio");
         }
-        return service.bulkUpdateCompatibilities(groups(body.groups()), body.productIds(), body.mode(),
+        List<Map<String, Object>> gs = groups(body.groups());
+        Map<String, Object> result = service.bulkUpdateCompatibilities(gs, body.productIds(), body.mode(),
                 body.sku(), body.vehicleNames(), body.notes(), body.positions(), body.batchId());
+        enqueueSuccessfulGroups(gs, result, "compatibilities_update");
+        return result;
     }
 
     @PostMapping("/positions/update")
@@ -185,7 +227,10 @@ public class BulkController {
         if (body.positions() == null || body.positions().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "positions nao pode ser vazio");
         }
-        return service.bulkUpdatePositions(groups(body.groups()), body.positions(), body.sku(), body.batchId());
+        List<Map<String, Object>> gs = groups(body.groups());
+        Map<String, Object> result = service.bulkUpdatePositions(gs, body.positions(), body.sku(), body.batchId());
+        enqueueSuccessfulGroups(gs, result, "positions_update");
+        return result;
     }
 
     private static ObjectNode objectUpdates(JsonNode updates) {

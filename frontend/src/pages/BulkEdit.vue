@@ -19,8 +19,10 @@ import {
   type ItemPackageInfo,
 } from "@/api/bulk";
 import { uploadPicture, getCategoryAttributes, type CategoryAttribute } from "@/api/items";
+import { initAttrValues, attrValueFilled, type AttrValue } from "@/lib/attrValues";
 import { useAuthStore } from "@/stores/auth";
 import type { MeliItem } from "@/types/item";
+import AttributeInput from "@/components/AttributeInput.vue";
 import StatusBadge from "@/components/StatusBadge.vue";
 import ListingTypeBadge from "@/components/ListingTypeBadge.vue";
 import ShippingBadge from "@/components/ShippingBadge.vue";
@@ -189,15 +191,7 @@ const packageDimsEnabled = computed(() => {
 
 // Atributos: ativo automaticamente se algum atributo foi setado
 const categoryAttrs = ref<CategoryAttribute[]>([]);
-interface AttrValue {
-  value_id: string | null;
-  value_name: string | null;
-  // Para value_type=number_unit: ML exige unit (default_unit) ou ignora silenciosamente.
-  number?: number | null;
-  unit?: string | null;
-}
 const attrValues = ref<Record<string, AttrValue>>({});
-const attrSearch = ref<Record<string, string>>({});
 // Attrs marcados explicitamente como "Não se aplica" pelo usuário
 const attrNotApplicable = ref<Set<string>>(new Set());
 const loadingAttrs = ref(false);
@@ -357,18 +351,6 @@ async function onFileSelected(event: Event) {
 }
 
 // --- Attributes ---
-function parseNumberUnit(
-  raw: string | null | undefined,
-  defaultUnit: string | null | undefined
-): { number: number | null; unit: string | null } {
-  if (!raw) return { number: null, unit: defaultUnit || null };
-  const m = String(raw).trim().match(/^(-?\d+(?:[.,]\d+)?)\s*([A-Za-z%º°]+)?$/);
-  if (!m) return { number: null, unit: defaultUnit || null };
-  const num = parseFloat(m[1].replace(",", "."));
-  const unit = m[2] || defaultUnit || null;
-  return { number: isNaN(num) ? null : num, unit };
-}
-
 async function loadCategoryAttributes(targetCategoryId?: string) {
   const categoryId = targetCategoryId || allItems.value[0]?.category_id;
   if (!categoryId) return;
@@ -381,25 +363,7 @@ async function loadCategoryAttributes(targetCategoryId?: string) {
 
   try {
     const attrs = await getCategoryAttributes(categoryId);
-    const currentMap: Record<string, any> = {};
-    for (const attr of refItem.attributes || []) currentMap[attr.id] = attr;
-    const values: Record<string, AttrValue> = {};
-    for (const ca of attrs) {
-      const current = currentMap[ca.id];
-      const v: AttrValue = { value_id: current?.value_id || null, value_name: current?.value_name || null };
-      if (ca.value_type === "number_unit") {
-        const struct = current?.value_struct;
-        if (struct && typeof struct === "object") {
-          v.number = typeof struct.number === "number" ? struct.number : null;
-          v.unit = struct.unit || ca.default_unit || null;
-        } else {
-          const parsed = parseNumberUnit(current?.value_name, ca.default_unit);
-          v.number = parsed.number;
-          v.unit = parsed.unit;
-        }
-      }
-      values[ca.id] = v;
-    }
+    const values = initAttrValues(attrs, refItem.attributes || []);
     attrStateByCategory.value = {
       ...attrStateByCategory.value,
       [categoryId]: { loaded: true, categoryAttrs: attrs, attrValues: values, attrNotApplicable: new Set() },
@@ -444,20 +408,9 @@ async function switchAttrCategory(newCategoryId: string) {
   }
 }
 
-function setAttrValue(attrId: string, valueId: string | null, valueName: string | null) {
-  const prev = attrValues.value[attrId] || {};
-  attrValues.value[attrId] = { ...prev, value_id: valueId, value_name: valueName };
-  if (valueId || valueName) {
-    const next = new Set(attrNotApplicable.value);
-    next.delete(attrId);
-    attrNotApplicable.value = next;
-  }
-}
-
-function setAttrNumberUnit(attrId: string, number: number | null, unit: string | null) {
-  const value_name = number !== null && unit ? `${number} ${unit}` : number !== null ? String(number) : null;
-  attrValues.value[attrId] = { value_id: null, value_name, number, unit };
-  if (number !== null) {
+function onAttrInput(attrId: string, v: AttrValue) {
+  attrValues.value[attrId] = v;
+  if (attrValueFilled(v)) {
     const next = new Set(attrNotApplicable.value);
     next.delete(attrId);
     attrNotApplicable.value = next;
@@ -473,19 +426,6 @@ function cancelAttrNotApplicable(attrId: string) {
   const next = new Set(attrNotApplicable.value);
   next.delete(attrId);
   attrNotApplicable.value = next;
-}
-
-function attrHasValue(attrId: string): boolean {
-  const v = attrValues.value[attrId];
-  if (!v) return false;
-  return !!(v.value_id || v.value_name || (v.number !== null && v.number !== undefined));
-}
-
-function closeAttrSearch(attrId: string) {
-  // Atraso pra permitir o @mousedown da opção rodar antes do dropdown sumir.
-  setTimeout(() => {
-    delete attrSearch.value[attrId];
-  }, 200);
 }
 
 function getChangedAttributesForState(
@@ -525,6 +465,21 @@ function getChangedAttributesForState(
 
     if (isNotApplicable) {
       changed.push({ id: attrId, value_id: null, value_name: null });
+      continue;
+    }
+
+    // value_type "number": o ML valida estritamente e um valor não-numérico
+    // (ex.: texto digitado no campo) faz 400 validation_error que DERRUBA o
+    // item inteiro. Parseia; se não for número, ignora só esse atributo em vez
+    // de poluir o PUT. ponytail: descarta silencioso — o input já é numérico.
+    if (attrTypeMap[attrId] === "number") {
+      const raw = val.value_name;
+      if (raw === null || raw === undefined || String(raw).trim() === "") continue;
+      const n = Number(String(raw).replace(",", "."));
+      if (!Number.isFinite(n)) continue;
+      const clean = String(n);
+      if (clean === (orig?.value_name || null)) continue;
+      changed.push({ id: attrId, value_name: clean });
       continue;
     }
 
@@ -835,6 +790,10 @@ const ML_ERROR_MESSAGES: Record<string, string> = {
   invalid_attribute: "Atributo inválido",
   catalog_listing_not_allowed: "Anúncio de catálogo — edição restrita",
   max_images_exceeded: "Limite máximo de fotos atingido",
+  "item.user_product.repeated.conflict":
+    "Alteração negada pelo Mercado Livre, anúncio idêntico a outro.",
+  "item.attribute.invalid":
+    "Valor de atributo inválido para o Mercado Livre (ex.: texto num campo que espera número).",
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -1607,35 +1566,11 @@ onMounted(loadGroups);
                   {{ attr.name }}
                   <span v-if="attr.tags.required || attr.tags.catalog_required" class="text-red-400 ml-0.5">*</span>
                 </label>
-                <div v-if="attr.value_type === 'number_unit'" class="flex gap-1">
-                  <input
-                    :value="attrValues[attr.id]?.number ?? ''"
-                    @input="(e) => { const raw = (e.target as HTMLInputElement).value; const n = raw === '' ? null : parseFloat(raw.replace(',', '.')); setAttrNumberUnit(attr.id, n !== null && !isNaN(n) ? n : null, attrValues[attr.id]?.unit || attr.default_unit || null); }"
-                    type="number" step="any" min="0" :placeholder="'0'"
-                    class="flex-1 min-w-0 px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-meli-blue"
-                    :class="attrHasValue(attr.id) ? 'border-blue-300 bg-blue-50/40' : 'border-gray-200'"
-                  />
-                  <select v-if="(attr.allowed_units?.length ?? 0) > 1"
-                    :value="attrValues[attr.id]?.unit || attr.default_unit || ''"
-                    @change="(e) => setAttrNumberUnit(attr.id, attrValues[attr.id]?.number ?? null, (e.target as HTMLSelectElement).value)"
-                    class="px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-meli-blue"
-                  >
-                    <option v-for="u in attr.allowed_units" :key="u.id" :value="u.id">{{ u.name }}</option>
-                  </select>
-                  <span v-else class="px-2 py-1.5 text-xs text-gray-500 bg-gray-100 rounded-lg flex items-center whitespace-nowrap">
-                    {{ attrValues[attr.id]?.unit || attr.default_unit || '—' }}
-                  </span>
-                </div>
-                <SelectMenu v-else-if="attr.values.length > 0 && !attr.tags.allow_custom_value"
-                  :model-value="attrValues[attr.id]?.value_id || ''"
-                  :options="attr.values.map((v) => ({ value: v.id, label: v.name }))"
-                  size="sm" empty-label="— Selecionar —"
-                  @update:model-value="(id) => { const sel = attr.values.find((v) => v.id === id); setAttrValue(attr.id, sel?.id || null, sel?.name || null); }"
-                />
-                <input v-else :value="attrValues[attr.id]?.value_name || ''"
-                  @input="(e) => setAttrValue(attr.id, null, (e.target as HTMLInputElement).value)"
-                  type="text" :placeholder="attr.name"
-                  class="w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-meli-blue border-gray-200"
+                <AttributeInput
+                  :attr="attr"
+                  :model-value="attrValues[attr.id]"
+                  size="sm"
+                  @update:model-value="(v) => onAttrInput(attr.id, v)"
                 />
               </div>
             </div>
@@ -1652,57 +1587,10 @@ onMounted(loadGroups);
                 <label class="block text-xs font-medium text-gray-700 mb-1" :title="attr.tooltip || undefined">
                   {{ attr.name }} <span class="text-red-400">*</span>
                 </label>
-                <!-- number_unit -->
-                <div v-if="attr.value_type === 'number_unit'" class="flex gap-1">
-                  <input
-                    :value="attrValues[attr.id]?.number ?? ''"
-                    @input="(e) => { const raw = (e.target as HTMLInputElement).value; const n = raw === '' ? null : parseFloat(raw.replace(',', '.')); setAttrNumberUnit(attr.id, n !== null && !isNaN(n) ? n : null, attrValues[attr.id]?.unit || attr.default_unit || null); }"
-                    type="number" step="any" min="0" placeholder="0"
-                    class="flex-1 min-w-0 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-meli-blue"
-                    :class="attrHasValue(attr.id) ? 'border-blue-300 bg-blue-50/40' : 'border-gray-200'"
-                  />
-                  <select v-if="(attr.allowed_units?.length ?? 0) > 1"
-                    :value="attrValues[attr.id]?.unit || attr.default_unit || ''"
-                    @change="(e) => setAttrNumberUnit(attr.id, attrValues[attr.id]?.number ?? null, (e.target as HTMLSelectElement).value)"
-                    class="px-2 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-meli-blue"
-                  >
-                    <option v-for="u in attr.allowed_units" :key="u.id" :value="u.id">{{ u.name }}</option>
-                  </select>
-                  <span v-else class="px-3 py-2 text-xs text-gray-500 bg-gray-100 rounded-lg flex items-center">
-                    {{ attrValues[attr.id]?.unit || attr.default_unit || '—' }}
-                  </span>
-                </div>
-                <!-- dropdown fixo -->
-                <SelectMenu v-else-if="attr.values.length > 0 && !attr.tags.allow_custom_value"
-                  :model-value="attrValues[attr.id]?.value_id || ''"
-                  :options="attr.values.map((v) => ({ value: v.id, label: v.name }))"
-                  empty-label="— Selecionar —"
-                  @update:model-value="(id) => { const sel = attr.values.find((v) => v.id === id); setAttrValue(attr.id, sel?.id || null, sel?.name || null); }"
-                />
-                <!-- combobox -->
-                <div v-else-if="attr.values.length > 0 && attr.tags.allow_custom_value" class="relative">
-                  <input
-                    :value="attrValues[attr.id]?.value_name || ''"
-                    @input="(e) => { const val = (e.target as HTMLInputElement).value; setAttrValue(attr.id, null, val); attrSearch[attr.id] = val; }"
-                    @focus="attrSearch[attr.id] = attrValues[attr.id]?.value_name || ''"
-                    @blur="closeAttrSearch(attr.id)"
-                    placeholder="Digitar ou selecionar..."
-                    class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-meli-blue"
-                    :class="attrHasValue(attr.id) ? 'border-blue-300 bg-blue-50/40' : 'border-gray-200'"
-                  />
-                  <div v-if="attrSearch[attr.id] !== undefined" class="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                    <button v-for="v in attr.values.filter(v => !attrSearch[attr.id] || v.name.toLowerCase().includes(attrSearch[attr.id].toLowerCase())).slice(0, 20)"
-                      :key="v.id" @mousedown.prevent="setAttrValue(attr.id, v.id, v.name); delete attrSearch[attr.id]"
-                      class="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 truncate"
-                    >{{ v.name }}</button>
-                  </div>
-                </div>
-                <!-- texto livre -->
-                <input v-else :value="attrValues[attr.id]?.value_name || ''"
-                  @input="(e) => setAttrValue(attr.id, null, (e.target as HTMLInputElement).value)"
-                  type="text" :placeholder="attr.name"
-                  class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-meli-blue"
-                  :class="attrHasValue(attr.id) ? 'border-blue-300 bg-blue-50/40' : 'border-gray-200'"
+                <AttributeInput
+                  :attr="attr"
+                  :model-value="attrValues[attr.id]"
+                  @update:model-value="(v) => onAttrInput(attr.id, v)"
                 />
               </div>
             </div>
@@ -1720,53 +1608,10 @@ onMounted(loadGroups);
                   {{ attr.name }}
                 </label>
                 <div :class="{'opacity-40 pointer-events-none': attrNotApplicable.has(attr.id)}">
-                  <div v-if="attr.value_type === 'number_unit'" class="flex gap-1">
-                    <input
-                      :value="attrValues[attr.id]?.number ?? ''"
-                      @input="(e) => { const raw = (e.target as HTMLInputElement).value; const n = raw === '' ? null : parseFloat(raw.replace(',', '.')); setAttrNumberUnit(attr.id, n !== null && !isNaN(n) ? n : null, attrValues[attr.id]?.unit || attr.default_unit || null); }"
-                      type="number" step="any" min="0" placeholder="0"
-                      class="flex-1 min-w-0 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-meli-blue"
-                      :class="attrHasValue(attr.id) ? 'border-blue-300 bg-blue-50/40' : 'border-gray-200'"
-                    />
-                    <select v-if="(attr.allowed_units?.length ?? 0) > 1"
-                      :value="attrValues[attr.id]?.unit || attr.default_unit || ''"
-                      @change="(e) => setAttrNumberUnit(attr.id, attrValues[attr.id]?.number ?? null, (e.target as HTMLSelectElement).value)"
-                      class="px-2 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-meli-blue"
-                    >
-                      <option v-for="u in attr.allowed_units" :key="u.id" :value="u.id">{{ u.name }}</option>
-                    </select>
-                    <span v-else class="px-3 py-2 text-xs text-gray-500 bg-gray-100 rounded-lg flex items-center">
-                      {{ attrValues[attr.id]?.unit || attr.default_unit || '—' }}
-                    </span>
-                  </div>
-                  <SelectMenu v-else-if="attr.values.length > 0 && !attr.tags.allow_custom_value"
-                    :model-value="attrValues[attr.id]?.value_id || ''"
-                    :options="attr.values.map((v) => ({ value: v.id, label: v.name }))"
-                    empty-label="— Selecionar —"
-                    @update:model-value="(id) => { const sel = attr.values.find((v) => v.id === id); setAttrValue(attr.id, sel?.id || null, sel?.name || null); }"
-                  />
-                  <div v-else-if="attr.values.length > 0 && attr.tags.allow_custom_value" class="relative">
-                    <input
-                      :value="attrValues[attr.id]?.value_name || ''"
-                      @input="(e) => { const val = (e.target as HTMLInputElement).value; setAttrValue(attr.id, null, val); attrSearch[attr.id] = val; }"
-                      @focus="attrSearch[attr.id] = attrValues[attr.id]?.value_name || ''"
-                      @blur="closeAttrSearch(attr.id)"
-                      placeholder="Digitar ou selecionar..."
-                      class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-meli-blue"
-                      :class="attrHasValue(attr.id) ? 'border-blue-300 bg-blue-50/40' : 'border-gray-200'"
-                    />
-                    <div v-if="attrSearch[attr.id] !== undefined" class="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                      <button v-for="v in attr.values.filter(v => !attrSearch[attr.id] || v.name.toLowerCase().includes(attrSearch[attr.id].toLowerCase())).slice(0, 20)"
-                        :key="v.id" @mousedown.prevent="setAttrValue(attr.id, v.id, v.name); delete attrSearch[attr.id]"
-                        class="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 truncate"
-                      >{{ v.name }}</button>
-                    </div>
-                  </div>
-                  <input v-else :value="attrValues[attr.id]?.value_name || ''"
-                    @input="(e) => setAttrValue(attr.id, null, (e.target as HTMLInputElement).value)"
-                    type="text" :placeholder="attr.name"
-                    class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-meli-blue"
-                    :class="attrHasValue(attr.id) ? 'border-blue-300 bg-blue-50/40' : 'border-gray-200'"
+                  <AttributeInput
+                    :attr="attr"
+                    :model-value="attrValues[attr.id]"
+                    @update:model-value="(v) => onAttrInput(attr.id, v)"
                   />
                 </div>
                 <button

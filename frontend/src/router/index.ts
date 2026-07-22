@@ -123,6 +123,12 @@ const router = createRouter({
           redirect: { name: "logs", query: { tab: "atendimento" } },
         },
         {
+          path: "qualidade",
+          name: "quality",
+          component: () => import("@/pages/ListingQuality.vue"),
+          meta: { perm: "quality" },
+        },
+        {
           path: "usuarios",
           name: "users",
           component: () => import("@/pages/Users.vue"),
@@ -153,6 +159,7 @@ const SECTION_ROUTES: { perm: string; path: string }[] = [
   { perm: "perguntas", path: "/atendimento/perguntas" },
   { perm: "mensagens", path: "/atendimento/mensagens" },
   { perm: "atendimento_historico", path: "/atendimento/historico" },
+  { perm: "quality", path: "/qualidade" },
 ];
 
 function firstAllowedPath(auth: ReturnType<typeof useAuthStore>): string | null {
