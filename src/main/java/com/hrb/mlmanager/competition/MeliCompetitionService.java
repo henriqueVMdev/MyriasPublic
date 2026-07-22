@@ -8,8 +8,6 @@ import com.hrb.mlmanager.meli.MeliClient;
 import com.hrb.mlmanager.meli.MeliClient.MeliResponse;
 import com.hrb.mlmanager.perf.PerfSnapshot;
 import com.hrb.mlmanager.perf.PerfSnapshotRepository;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -139,12 +137,12 @@ public class MeliCompetitionService {
             for (CodeTerm code : codes) {
                 termsUsed.add(code.value());
                 // Código é específico: busca sem filtro de categoria pra não perder concorrente.
-                aggregate(byId, publicSearch(code.value(), null));
+                aggregate(byId, searchListings(userId, code.value(), null));
             }
         } else {
             matchedBy = "title";
             if (!title.isBlank()) termsUsed.add(title);
-            aggregate(byId, publicSearch(title, categoryId));
+            aggregate(byId, searchListings(userId, title, categoryId));
         }
 
         ArrayNode results = M.createArrayNode();
@@ -168,16 +166,21 @@ public class MeliCompetitionService {
         return out;
     }
 
-    /** Busca pública por termo; retorna o array de results (vazio em falha). */
-    private JsonNode publicSearch(String q, String category) {
+    /**
+     * Busca de anúncios por termo. Autenticada: o ML passou a exigir token no
+     * /sites/MLB/search (retorna 403 anônimo). O token é da nossa conta, mas os
+     * resultados são públicos — serve pra achar concorrentes.
+     */
+    private JsonNode searchListings(long userId, String q, String category) {
         if (q == null || q.isBlank()) return M.createArrayNode();
-        StringBuilder path = new StringBuilder("/sites/MLB/search?limit=20&q=")
-                .append(URLEncoder.encode(q, StandardCharsets.UTF_8));
-        if (category != null && !category.isBlank()) path.append("&category=").append(category);
-        MeliResponse resp = client.getPublic(path.toString());
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("q", q);
+        params.put("limit", "20");
+        if (category != null && !category.isBlank()) params.put("category", category);
+        MeliResponse resp = client.get("/sites/MLB/search", params, userId);
         JsonNode results = resp.data() == null ? null : resp.data().path("results");
         if (resp.status() != 200 || results == null || !results.isArray()) {
-            log.warn("competition: busca pública q='{}' -> HTTP {}", q, resp.status());
+            log.warn("competition: busca q='{}' user={} -> HTTP {}", q, userId, resp.status());
             return M.createArrayNode();
         }
         return results;
@@ -398,16 +401,17 @@ public class MeliCompetitionService {
     }
 
     /**
-     * Detalhes públicos de qualquer anúncio (nosso ou de concorrente) pra o agente
-     * comparar "o que eles fazem diferente": tipo de anúncio, frete, garantia, nº de
-     * fotos, atributos preenchidos e um trecho da descrição.
+     * Detalhes de qualquer anúncio (nosso ou de concorrente) pra o agente comparar
+     * "o que eles fazem diferente": tipo de anúncio, frete, garantia, nº de fotos,
+     * atributos preenchidos e um trecho da descrição. Autenticada com o token da
+     * conta informada (o ML exige token em /items; os dados retornados são públicos).
      */
-    public ObjectNode publicListing(String itemId) {
+    public ObjectNode inspectListing(long userId, String itemId) {
         ObjectNode out = M.createObjectNode();
         out.put("item_id", itemId);
-        MeliResponse resp = client.getPublic("/items/" + itemId);
+        MeliResponse resp = client.get("/items/" + itemId, userId);
         if (resp.status() != 200 || resp.data() == null || !resp.data().isObject()) {
-            out.put("error", "Não foi possível obter o anúncio público " + itemId + " (HTTP " + resp.status() + ").");
+            out.put("error", "Não foi possível obter o anúncio " + itemId + " (HTTP " + resp.status() + ").");
             return out;
         }
         JsonNode it = resp.data();
@@ -434,7 +438,7 @@ public class MeliCompetitionService {
             if (attrs.size() >= 40) break;
         }
         try {
-            MeliResponse d = client.getPublic("/items/" + itemId + "/description");
+            MeliResponse d = client.get("/items/" + itemId + "/description", userId);
             if (d.status() == 200 && d.data() != null) {
                 String plain = d.data().path("plain_text").asText("");
                 out.put("description", plain.length() > 2000 ? plain.substring(0, 2000) : plain);

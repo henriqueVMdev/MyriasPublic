@@ -326,10 +326,11 @@ class AiToolRegistryTest {
     }
 
     @Test
-    void inspectListingDespachaOItemId() {
-        when(competition.publicListing("MLB2")).thenReturn(MAPPER.createObjectNode().put("title", "Rival"));
-        registry.executeRead("inspect_listing", MAPPER.createObjectNode().put("item_id", "MLB2"));
-        verify(competition).publicListing("MLB2");
+    void inspectListingDespachaContaEItemId() {
+        when(competition.inspectListing(10L, "MLB2")).thenReturn(MAPPER.createObjectNode().put("title", "Rival"));
+        registry.executeRead("inspect_listing",
+                MAPPER.createObjectNode().put("account_user_id", 10L).put("item_id", "MLB2"));
+        verify(competition).inspectListing(10L, "MLB2");
     }
 
     @Test
