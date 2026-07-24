@@ -33,7 +33,8 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
-                .allowedOrigins(frontendUrl, "http://localhost:5173")
+                // Patterns (não allowedOrigins) p/ aceitar o Vite acessado por IP da LAN, ex.: http://192.168.3.130:5173
+                .allowedOriginPatterns(frontendUrl, "http://localhost:5173", "http://192.168.*.*:5173", "http://10.*.*.*:5173")
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                 .allowedHeaders("Content-Type", "Authorization", "Cookie")
                 .allowCredentials(true);
