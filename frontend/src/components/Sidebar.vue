@@ -9,6 +9,7 @@ import ConfirmPasswordModal from "./ConfirmPasswordModal.vue";
 import {
   LayoutDashboard,
   BarChart3,
+  Bot,
   BrainCircuit,
   Layers,
   CopyMinus,
@@ -59,6 +60,7 @@ const navSections = [
       { to: "/promocoes", label: "Promoções", icon: Tag, perm: "promocoes" },
       { to: "/logs", label: "Histórico", icon: ScrollText, anyPerm: ["logs", "atendimento_historico"] },
       { to: "/planilhas", label: "Planilhas", icon: FileSpreadsheet, perm: "planilhas" },
+      { to: "/assistente", label: "Assistente", icon: Bot, perm: "assistente" },
     ],
   },
   {

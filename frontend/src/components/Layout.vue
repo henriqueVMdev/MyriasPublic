@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
+import { useRoute } from "vue-router";
 import Sidebar from "./Sidebar.vue";
 import AssistantWidget from "./AssistantWidget.vue";
 import { Menu, Sun, Moon } from "lucide-vue-next";
@@ -8,6 +9,7 @@ import { useAuthStore } from "@/stores/auth";
 
 const theme = useThemeStore();
 const auth = useAuthStore();
+const route = useRoute();
 const sidebarOpen = ref(false);
 
 // Colapso da sidebar no desktop — persistido entre sessões
@@ -64,7 +66,9 @@ watch(collapsed, (v) => localStorage.setItem(COLLAPSE_KEY, v ? "1" : "0"));
       </header>
 
       <main class="flex-1 overflow-auto bg-gray-50 dark:bg-brand-black p-4 lg:p-6">
-        <div class="max-w-[1500px] mx-auto">
+        <!-- h-full: páginas que ocupam a tela inteira (ex.: /assistente) precisam
+             de uma altura definida pra resolver o `h-full` delas. -->
+        <div class="max-w-[1500px] mx-auto h-full">
           <router-view v-slot="{ Component }">
             <transition name="page" mode="out-in">
               <component :is="Component" />
@@ -75,7 +79,9 @@ watch(collapsed, (v) => localStorage.setItem(COLLAPSE_KEY, v ? "1" : "0"));
     </div>
 
     <!-- Assistente de IA (flutua acima do toggle de tema) -->
-    <AssistantWidget v-if="auth.can('assistente')" />
+    <AssistantWidget
+      v-if="auth.can('assistente') && route.name !== 'assistant-chat'"
+    />
 
     <!-- Toggle de tema: bolinha flutuante no canto inferior direito.
          Claro → bola preta/lua branca (vai pro escuro). Escuro → bola branca/sol preto (vai pro claro). -->

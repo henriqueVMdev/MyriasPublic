@@ -1,35 +1,14 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from "vue";
 import { Bot, X, SendHorizonal, Loader2, Trash2, Search, Check } from "lucide-vue-next";
-import { marked } from "marked";
+import { renderMarkdown } from "@/lib/markdown";
 import { useAssistantStore } from "@/stores/assistant";
 import { useAuthStore } from "@/stores/auth";
-
-// Links do modelo: só http(s), mailto, âncora ou caminho — derruba javascript:/data: etc.
-const SAFE_HREF = /^(https?:|mailto:|#|\/)/i;
-marked.use({
-  walkTokens(token) {
-    if (
-      (token.type === "link" || token.type === "image") &&
-      !SAFE_HREF.test(token.href.replace(/[\u0000-\u0020]/g, ""))
-    ) {
-      token.href = "#";
-    }
-  },
-});
 
 const store = useAssistantStore();
 const auth = useAuthStore();
 const draft = ref("");
 const scrollArea = ref<HTMLElement | null>(null);
-
-// Markdown seguro: escapa HTML do modelo ANTES do marked → nada de tag injetada.
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-function md(s: string): string {
-  return marked.parse(escapeHtml(s), { async: false, breaks: true }) as string;
-}
 
 async function open() {
   store.isOpen = true;
@@ -133,7 +112,7 @@ function onKeydown(e: KeyboardEvent) {
         <div v-else class="flex">
           <div
             class="max-w-[85%] rounded-lg px-3 py-1.5 text-sm bg-zinc-100 dark:bg-zinc-800 prose prose-sm dark:prose-invert prose-p:my-1 prose-pre:my-1 prose-pre:text-xs prose-table:text-xs max-w-none overflow-x-auto"
-            v-html="md(entry.content)"
+            v-html="renderMarkdown(entry.content)"
           />
         </div>
       </template>
