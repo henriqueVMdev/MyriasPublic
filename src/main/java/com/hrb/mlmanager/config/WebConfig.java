@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
@@ -14,7 +15,8 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * Espelha o add_middleware(CORSMiddleware, ...) do FastAPI.
  */
 @Configuration
-@EnableAsync   // habilita o refresh de snapshot em background (PerfRefreshRunner)
+@EnableAsync        // refresh de snapshot em background (PerfRefreshRunner)
+@EnableScheduling   // auditoria noturna de qualidade (QualityJobs)
 public class WebConfig implements WebMvcConfigurer {
 
     private final String frontendUrl;
@@ -31,7 +33,8 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
-                .allowedOrigins(frontendUrl, "http://localhost:5173")
+                // Patterns (não allowedOrigins) p/ aceitar o Vite acessado por IP da LAN, ex.: http://192.168.3.130:5173
+                .allowedOriginPatterns(frontendUrl, "http://localhost:5173", "http://192.168.*.*:5173", "http://10.*.*.*:5173")
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                 .allowedHeaders("Content-Type", "Authorization", "Cookie")
                 .allowCredentials(true);

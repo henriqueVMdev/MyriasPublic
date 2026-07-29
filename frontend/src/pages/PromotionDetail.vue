@@ -1,24 +1,27 @@
 <script setup lang="ts">
-import { ref, computed, reactive, onMounted } from "vue";
+import { ref, computed, reactive, onMounted, onBeforeUnmount, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   getPromotionItems,
   searchPromotionItems,
   addPromotionItems,
   removePromotionItems,
+  enrichLightning,
   type PromotionItem,
   type PromotionItemInput,
 } from "@/api/promotions";
+import { getScanCache, setScanCache, clearScanCache } from "@/api/promotionCache";
 import { useAuthStore } from "@/stores/auth";
 import {
   ArrowLeft, Loader2, Tag, Trash2, Plus, PencilLine, Check,
-  AlertTriangle, PackageX, Info, Search, X, CalendarClock,
+  AlertTriangle, PackageX, Info, Search, X, CalendarClock, ExternalLink, RefreshCw,
 } from "lucide-vue-next";
 
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
 const canManage = computed(() => auth.can("manage_promotions"));
+const accountId = computed(() => auth.accounts.find((a) => a.is_active)?.user_id);
 
 const promotionId = route.params.id as string;
 const promotionType = (route.query.type as string) || "";
@@ -39,15 +42,17 @@ const dateRange = computed(() =>
 // Tipos em que o vendedor escolhe o preço (espelha PRICE_CHOICE_TYPES do backend).
 const PRICE_CHOICE = new Set(["DEAL", "LIGHTNING", "DOD", "PRICE_DISCOUNT", "PRE_NEGOTIATED"]);
 const editable = PRICE_CHOICE.has(promotionType);
+const isCoupon = promotionType === "SELLER_COUPON_CAMPAIGN";
 
 type TabKey = "candidate" | "started";
-const tab = ref<TabKey>("candidate");
+// Cupom inclui os elegíveis automaticamente → eles voltam como "started"
+// (candidate fica null). Abre direto onde os itens estão.
+const tab = ref<TabKey>(isCoupon ? "started" : "candidate");
 
 const items = ref<PromotionItem[]>([]);
 const total = ref<number | null>(null);
 const searchAfter = ref<string | null>(null);
 const loading = ref(false);
-const loadingMore = ref(false);
 const errorMsg = ref<string | null>(null);
 
 // Preço promocional digitado por anúncio (id -> valor). Só usado em tipos editáveis.
@@ -74,6 +79,88 @@ function itemInvalid(it: PromotionItem): boolean {
   return priceInvalid(it) || stockInvalid(it);
 }
 
+// Fluxo por categoria: ao abrir, a promo é varrida INTEIRA (só id+categoria) e nada
+// é exibido. As categorias dos elegíveis viram chips; o usuário marca uma ou mais e
+// só então os anúncios daquelas categorias aparecem (e, no LIGHTNING, têm os limites
+// de preço buscados sob demanda). Começa tudo desmarcado.
+const NO_CAT = "__none__";
+function catKey(it: PromotionItem): string {
+  return it.category_id || NO_CAT;
+}
+const activeCategories = ref<Set<string>>(new Set());
+const categories = computed(() => {
+  const map = new Map<string, { id: string; name: string; count: number }>();
+  for (const it of items.value) {
+    const id = catKey(it);
+    const name = it.category_id ? it.category_name || it.category_id : "Sem categoria";
+    const e = map.get(id) || { id, name, count: 0 };
+    e.count++;
+    map.set(id, e);
+  }
+  return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+});
+// Anúncios visíveis: só os das categorias MARCADAS (vazio até escolher uma). Na busca
+// por SKU/MLB o filtro de categoria não vale — mostra o que a busca achou.
+const visibleItems = computed(() => {
+  if (searchMode.value) return items.value;
+  if (activeCategories.value.size === 0) return [];
+  return items.value.filter((it) => activeCategories.value.has(catKey(it)));
+});
+function toggleCategory(id: string) {
+  const s = new Set(activeCategories.value);
+  if (s.has(id)) {
+    s.delete(id);
+    // Categoria desmarcada → tira seus anúncios da seleção (não serão aplicados).
+    const sel = new Set(selectedIds.value);
+    for (const it of items.value) if (catKey(it) === id) sel.delete(it.id);
+    selectedIds.value = sel;
+  } else {
+    s.add(id);
+  }
+  activeCategories.value = s;
+}
+
+// LIGHTNING: os limites reais de preço só são buscados quando a categoria é aberta
+// (a varredura inicial os pula). Enriquece os visíveis ainda não enriquecidos.
+const enrichedIds = new Set<string>();
+const enriching = ref(false);
+async function enrichVisibleLightning() {
+  if (promotionType !== "LIGHTNING" || searchMode.value) return;
+  const pending = visibleItems.value.filter((it) => !enrichedIds.has(it.id));
+  if (pending.length === 0) return;
+  enriching.value = true;
+  try {
+    const limits = await enrichLightning(promotionId, pending.map((it) => it.id));
+    for (const it of pending) {
+      enrichedIds.add(it.id);
+      const lim = limits[it.id];
+      if (!lim) continue;
+      if (lim.min_price != null) it.min_price = lim.min_price;
+      if (lim.max_price != null) {
+        it.max_price = lim.max_price;
+        it.suggested_price = lim.suggested_price;
+        // Candidata: default vira o preço crível; participando mantém o que vale.
+        if (it.status !== "started" && it.status !== "pending") {
+          it.promo_price = lim.suggested_price;
+          it.promo_price_min = lim.suggested_price;
+          it.promo_price_max = lim.suggested_price;
+          priceInputs[it.id] = lim.suggested_price ?? priceInputs[it.id] ?? null;
+          it.discount_pct =
+            it.current_price && lim.suggested_price != null && it.current_price > 0
+              ? Math.round(((it.current_price - lim.suggested_price) / it.current_price) * 1000) / 10
+              : null;
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Erro ao enriquecer limites LIGHTNING:", err);
+  } finally {
+    enriching.value = false;
+    writeCache(tab.value); // grava os limites enriquecidos pra reentrada não rebuscar
+  }
+}
+watch(activeCategories, enrichVisibleLightning);
+
 // Seleção múltipla (mesmo padrão do SkuPerformance).
 const selectedIds = ref<Set<string>>(new Set());
 const lastClickedIndex = ref<number | null>(null);
@@ -97,10 +184,25 @@ type SummaryKind = "info" | "success" | "partial" | "error";
 const summary = ref<string | null>(null);
 const summaryKind = ref<SummaryKind>("info");
 const summaryFails = ref<Array<{ mlb: string; reason: string }>>([]);
-function showSummary(text: string | null, kind: SummaryKind = "info", fails: Array<{ mlb: string; reason: string }> = []) {
+// batch_id do último lote — pra linkar "Ver detalhes" no histórico quando dá erro.
+const summaryBatchId = ref<string | null>(null);
+function showSummary(
+  text: string | null,
+  kind: SummaryKind = "info",
+  fails: Array<{ mlb: string; reason: string }> = [],
+  batchId: string | null = null
+) {
   summary.value = text;
   summaryKind.value = kind;
   summaryFails.value = fails;
+  summaryBatchId.value = batchId;
+}
+// Só mostra até 8 falhas inline; o resto o usuário vê no histórico (botão abaixo).
+const FAILS_INLINE_CAP = 8;
+const shownFails = computed(() => summaryFails.value.slice(0, FAILS_INLINE_CAP));
+const hiddenFailsCount = computed(() => Math.max(0, summaryFails.value.length - FAILS_INLINE_CAP));
+function openBatchDetail() {
+  if (summaryBatchId.value) router.push({ name: "operation-detail", params: { key: summaryBatchId.value } });
 }
 
 // Cores do box conforme o resultado (espelha o pedido: verde ok, amarelo parcial, vermelho erro).
@@ -113,11 +215,15 @@ const SUMMARY_CLS: Record<SummaryKind, string> = {
 
 // Erros conhecidos do ML traduzidos; senão cai pra mensagem crua que o ML mandou.
 const PROMO_ERROR_LABELS: Record<string, string> = {
-  ERROR_CREDIBILITY_DISCOUNTED_PRICE: "preço promocional recusado (desconto alto demais p/ ser crível)",
+  ERROR_CREDIBILITY_DISCOUNTED_PRICE: "preço promocional fora da faixa considerada válida pelo ML; confira os limites atualizados",
+  OFFER_ALREADY_EXISTS: "o anúncio já possui uma oferta nesta promoção",
 };
 function describeFail(r: { item_id: string; status: number; data?: any; error?: string }): { mlb: string; reason: string } {
   const d = r.data || {};
-  const code = d?.cause?.[0]?.error_code || d?.error;
+  const raw = d?.message || d?.error || r.error || "";
+  const code = d?.cause?.[0]?.error_code
+    || d?.cause?.[0]?.code
+    || Object.keys(PROMO_ERROR_LABELS).find((known) => String(raw).includes(known));
   const reason = PROMO_ERROR_LABELS[code] || d?.message || r.error || `erro ${r.status}`;
   return { mlb: r.item_id, reason };
 }
@@ -129,10 +235,9 @@ const searching = ref(false);
 const searchMessages = ref<string[]>([]);
 
 const allSelected = computed(
-  () => items.value.length > 0 && items.value.every((it) => selectedIds.value.has(it.id))
+  () => visibleItems.value.length > 0 && visibleItems.value.every((it) => selectedIds.value.has(it.id))
 );
 const someSelected = computed(() => selectedIds.value.size > 0 && !allSelected.value);
-const hasMore = computed(() => !!searchAfter.value);
 
 function fmtPrice(v: number | null | undefined): string {
   if (v == null) return "—";
@@ -152,6 +257,9 @@ function priceInvalid(it: PromotionItem): boolean {
   if (!editable) return false;
   const v = priceInputs[it.id];
   if (v == null || v <= 0) return true;
+  // Sem teto de credibilidade não há como validar o preço antes do POST. É mais
+  // seguro bloquear do que deixar o ML rejeitar milhares de itens depois.
+  if (it.max_price == null) return true;
   if (it.min_price != null && v < it.min_price) return true;
   if (it.max_price != null && v > it.max_price) return true;
   return false;
@@ -159,8 +267,13 @@ function priceInvalid(it: PromotionItem): boolean {
 // Aviso curto, por anúncio, do porquê o preço está fora do limite (os dois lados).
 function limitMessage(it: PromotionItem): string | null {
   if (!editable) return null;
+  // LIGHTNING: até o enrich por item trazer o teto real, o item fica sem max_price
+  // (bloqueado). Enquanto carrega, avisa que está buscando — não "recarregue".
+  if (it.max_price == null && promotionType === "LIGHTNING" && enriching.value)
+    return "Carregando limite de preço…";
   const v = priceInputs[it.id];
   if (v == null || v <= 0) return "Defina um preço promocional";
+  if (it.max_price == null) return "O ML não informou um limite de preço confiável; recarregue e tente novamente";
   if (it.min_price != null && v < it.min_price) return `Abaixo do mínimo (${fmtPrice(it.min_price)})`;
   if (it.max_price != null && v > it.max_price) return `Acima do máximo (${fmtPrice(it.max_price)})`;
   return null;
@@ -196,6 +309,24 @@ function ingest(page: { items: PromotionItem[]; paging: { total: number | null; 
           existing.promo_price_min = Math.min(existing.promo_price_min ?? it.promo_price_min, it.promo_price_min);
         if (it.promo_price_max != null)
           existing.promo_price_max = Math.max(existing.promo_price_max ?? it.promo_price_max, it.promo_price_max);
+        // Duplicatas entre páginas podem trazer faixas diferentes. Consolida a
+        // interseção segura: maior mínimo e menor teto/sugerido.
+        if (it.min_price != null)
+          existing.min_price = Math.max(existing.min_price ?? it.min_price, it.min_price);
+        if (it.max_price != null)
+          existing.max_price = Math.min(existing.max_price ?? it.max_price, it.max_price);
+        if (it.suggested_price != null)
+          existing.suggested_price = Math.min(existing.suggested_price ?? it.suggested_price, it.suggested_price);
+        if (it.stock_min != null)
+          existing.stock_min = Math.max(existing.stock_min ?? it.stock_min, it.stock_min);
+        if (it.stock_max != null)
+          existing.stock_max = Math.min(existing.stock_max ?? it.stock_max, it.stock_max);
+        // O scan acontece antes de liberar a tela; atualiza o default conforme o
+        // limite mais restritivo descoberto numa página posterior.
+        if (existing.status !== "started" && existing.status !== "pending") {
+          const safeDefault = existing.suggested_price ?? existing.promo_price;
+          priceInputs[existing.id] = safeDefault ?? null;
+        }
       } else {
         fresh.push(it);
       }
@@ -216,13 +347,70 @@ function ingest(page: { items: PromotionItem[]; paging: { total: number | null; 
   searchAfter.value = page.paging.search_after;
 }
 
+// Snapshot do estado de trabalho da aba atual no cache de sessão (chamado ao trocar de
+// aba e ao sair da tela). Não cacheia busca nem tela vazia/erro.
+function writeCache(tabKey: TabKey) {
+  if (searchMode.value || errorMsg.value || items.value.length === 0) return;
+  setScanCache(accountId.value, promotionId, promotionType, tabKey, {
+    items: items.value,
+    total: total.value,
+    active: [...activeCategories.value],
+    enriched: [...enrichedIds],
+    prices: { ...priceInputs },
+    stocks: { ...stockInputs },
+  });
+}
+
+// Restaura uma entrada de cache pra a tela (sem varrer o ML de novo).
+function restoreFromCache(c: NonNullable<ReturnType<typeof getScanCache>>) {
+  clearSelection();
+  errorMsg.value = null;
+  searchAfter.value = null;
+  items.value = c.items;
+  total.value = c.total;
+  enrichedIds.clear();
+  c.enriched.forEach((id) => enrichedIds.add(id));
+  for (const k in priceInputs) delete priceInputs[k];
+  Object.assign(priceInputs, c.prices);
+  for (const k in stockInputs) delete stockInputs[k];
+  Object.assign(stockInputs, c.stocks);
+  // Por último: marcar as categorias dispara o watch de enrich, mas enrichedIds já
+  // está populado → nada é rebuscado.
+  activeCategories.value = new Set(c.active);
+  loading.value = false;
+}
+
 async function load() {
+  // Cache hit → restaura sem re-varrer (só fora do modo busca).
+  const cached = searchMode.value
+    ? undefined
+    : getScanCache(accountId.value, promotionId, promotionType, tab.value);
+  if (cached) {
+    restoreFromCache(cached);
+    return;
+  }
   loading.value = true;
   errorMsg.value = null;
   clearSelection();
+  activeCategories.value = new Set();
+  enrichedIds.clear();
   searchAfter.value = null;
+  items.value = [];
   try {
-    ingest(await getPromotionItems(promotionId, promotionType, tab.value), false);
+    // Varre a promo INTEIRA (só id+categoria; sem enrich de LIGHTNING) pra montar as
+    // categorias. Pode haver milhares de elegíveis → várias páginas encadeadas.
+    let after: string | null = null;
+    let first = true;
+    // ponytail: teto de 500 páginas (~25k itens) e para em página vazia — evita loop
+    // infinito se o ML devolver search_after sem fim. Sobe o teto se alguma promo passar.
+    for (let guard = 0; guard < 500; guard++) {
+      const page = await getPromotionItems(promotionId, promotionType, tab.value, after ?? undefined, false);
+      ingest(page, !first);
+      first = false;
+      after = searchAfter.value;
+      if (!after || !page.items.length) break;
+    }
+    writeCache(tab.value); // guarda o scan recém-feito
   } catch (err: any) {
     errorMsg.value = err?.response?.data?.detail || "Erro ao carregar anúncios da promoção.";
     console.error("Erro ao carregar itens da promoção:", err);
@@ -231,20 +419,15 @@ async function load() {
   }
 }
 
-async function loadMore() {
-  if (!searchAfter.value || loadingMore.value) return;
-  loadingMore.value = true;
-  try {
-    ingest(await getPromotionItems(promotionId, promotionType, tab.value, searchAfter.value), true);
-  } catch (err: any) {
-    errorMsg.value = err?.response?.data?.detail || "Erro ao carregar mais anúncios.";
-  } finally {
-    loadingMore.value = false;
-  }
+// Força re-varredura (descarta o cache desta promoção).
+function refresh() {
+  clearScanCache(accountId.value, promotionId, promotionType);
+  load();
 }
 
 function setTab(t: TabKey) {
   if (tab.value === t) return;
+  writeCache(tab.value); // guarda a aba atual antes de trocar
   searchMode.value = false;
   searchQ.value = "";
   tab.value = t;
@@ -303,7 +486,7 @@ function setRange(fromIdx: number, toIdx: number, select: boolean) {
   const [a, b] = fromIdx <= toIdx ? [fromIdx, toIdx] : [toIdx, fromIdx];
   const s = new Set(selectedIds.value);
   for (let i = a; i <= b; i++) {
-    const id = items.value[i]?.id;
+    const id = visibleItems.value[i]?.id;
     if (!id) continue;
     delete bulkSkipped[id];
     if (select) s.add(id);
@@ -312,7 +495,7 @@ function setRange(fromIdx: number, toIdx: number, select: boolean) {
   selectedIds.value = s;
 }
 function onCheckbox(index: number, event: MouseEvent) {
-  const id = items.value[index]?.id;
+  const id = visibleItems.value[index]?.id;
   if (!id) return;
   const willSelect = !selectedIds.value.has(id);
   if (event.shiftKey && lastClickedIndex.value !== null) {
@@ -324,7 +507,7 @@ function onCheckbox(index: number, event: MouseEvent) {
 }
 function toggleSelectAll() {
   clearBulkSkipped();
-  selectedIds.value = allSelected.value ? new Set() : new Set(items.value.map((it) => it.id));
+  selectedIds.value = allSelected.value ? new Set() : new Set(visibleItems.value.map((it) => it.id));
   lastClickedIndex.value = null;
 }
 function clearSelection() {
@@ -363,7 +546,7 @@ function selectByMaxDiscount() {
   const max = maxSelectPct.value;
   // Desconto definido pelo ML (discount_pct). Marca <= X%, ignora os acima e os sem %.
   selectedIds.value = new Set(
-    items.value.filter((it) => it.discount_pct != null && it.discount_pct <= max).map((it) => it.id)
+    visibleItems.value.filter((it) => it.discount_pct != null && it.discount_pct <= max).map((it) => it.id)
   );
   lastClickedIndex.value = null;
 }
@@ -422,21 +605,42 @@ async function runAction() {
       });
     }
     const fails = res.results.filter((r) => !r.ok).map(describeFail);
+    const verb = action === "remove" ? "removido(s)" : action === "update" ? "atualizado(s)" : "incluído(s)";
     const parts: string[] = [];
-    if (res.succeeded) parts.push(`${res.succeeded} ok`);
+    if (res.succeeded) parts.push(`${res.succeeded} ${verb} com sucesso`);
     if (res.failed) parts.push(`${res.failed} com erro`);
     const text = parts.join(" · ") || "Nenhum anúncio processado.";
     const kind: SummaryKind = res.failed === 0 ? "success" : res.succeeded === 0 ? "error" : "partial";
-    showSummary(text, res.succeeded || res.failed ? kind : "info", fails);
+    // Guarda o batch_id só quando houve erro — é aí que o "Ver detalhes" ajuda.
+    const batchId = res.failed ? res.batch_id : null;
+    showSummary(text, res.succeeded || res.failed ? kind : "info", fails, batchId);
+    // Escrita mudou a elegibilidade → invalida o cache das duas abas desta promoção.
+    if (res.succeeded) clearScanCache(accountId.value, promotionId, promotionType);
     clearSelection();
-    // O ML é eventualmente consistente: logo após criar/remover ofertas, a
-    // listagem de candidate/started ainda devolve os mesmos itens. Recarregar
-    // aqui faria os incluídos reaparecerem em "Elegíveis". Então removemos da
-    // lista, na hora, os que voltaram ok — mesmo padrão do removeOne().
     const okIds = new Set(res.results.filter((r) => r.ok).map((r) => r.item_id));
     if (okIds.size) {
-      items.value = items.value.filter((it) => !okIds.has(it.id));
-      if (total.value != null) total.value = Math.max(0, total.value - okIds.size);
+      if (action === "update") {
+        // Atualizar preço na aba Participando: os anúncios continuam na promoção,
+        // só mudou o preço → atualiza a linha no lugar (mesmo padrão do saveOne),
+        // sem tirá-los da lista.
+        for (const it of items.value) {
+          if (!okIds.has(it.id)) continue;
+          const novo = priceInputs[it.id] ?? it.promo_price;
+          it.promo_price = novo;
+          it.promo_price_min = novo;
+          it.promo_price_max = novo;
+          it.discount_pct =
+            it.current_price && novo != null && it.current_price > 0
+              ? Math.round(((it.current_price - novo) / it.current_price) * 1000) / 10
+              : null;
+        }
+      } else {
+        // Incluir/remover: o ML é eventualmente consistente e ainda devolve os mesmos
+        // itens na listagem por um tempo. Recarregar faria os incluídos reaparecerem
+        // em "Elegíveis" → removemos da lista, na hora, os que voltaram ok.
+        items.value = items.value.filter((it) => !okIds.has(it.id));
+        if (total.value != null) total.value = Math.max(0, total.value - okIds.size);
+      }
     }
   } catch (err: any) {
     showSummary(err?.response?.data?.detail || "Erro ao processar a ação.", "error");
@@ -519,6 +723,7 @@ async function removeOne(it: PromotionItem) {
     if (res.succeeded) {
       items.value = items.value.filter((x) => x.id !== it.id);
       if (total.value != null) total.value -= 1;
+      clearScanCache(accountId.value, promotionId, promotionType);
       showSummary("Anúncio removido da promoção.", "success");
     } else {
       showSummary("Não foi possível remover este anúncio.", "error", (res.results || []).filter((r) => !r.ok).map(describeFail));
@@ -548,15 +753,13 @@ function displayDiscount(it: PromotionItem): number | null {
 // Linha tem ações próprias (alterar/remover) na aba Participando.
 const showRowActions = computed(() => canManage.value && tab.value === "started" && !searchMode.value);
 
-// Cupom só tem elegíveis (started é sempre vazio) → sem aba "Participando".
-const TABS = computed<Array<{ key: TabKey; label: string }>>(() =>
-  promotionType === "SELLER_COUPON_CAMPAIGN"
-    ? [{ key: "candidate", label: "Elegíveis" }]
-    : [
-        { key: "candidate", label: "Elegíveis" },
-        { key: "started", label: "Participando" },
-      ]
-);
+// Duas abas pra todos os tipos. No cupom, os anúncios elegíveis são incluídos
+// automaticamente pelo ML e voltam como "started" — a aba Participando é a que
+// tem itens; candidate costuma vir vazio (mas mantemos, caso o ML popule).
+const TABS = computed<Array<{ key: TabKey; label: string }>>(() => [
+  { key: "candidate", label: "Elegíveis" },
+  { key: "started", label: "Participando" },
+]);
 const confirmLabel = computed(() =>
   pendingAction.value === "remove" ? "Remover" : pendingAction.value === "update" ? "Atualizar preço" : "Incluir"
 );
@@ -569,11 +772,16 @@ const actionCount = computed(() => {
 // Texto explicativo do comportamento do tipo de promoção.
 const typeHint = computed(() => {
   if (editable) return "Você escolhe o preço promocional de cada anúncio, dentro da faixa permitida pelo ML.";
-  if (promotionType === "SELLER_COUPON_CAMPAIGN") return "Cupom de desconto percentual fixo definido pelo ML — basta incluir os anúncios.";
+  if (isCoupon) return "Cupom de desconto percentual fixo definido pelo ML. Os anúncios elegíveis entram automaticamente — veja-os na aba Participando.";
   return "O desconto é definido pelo Mercado Livre. Você só inclui ou remove anúncios — o preço promocional não é editável.";
 });
 
-onMounted(load);
+onMounted(async () => {
+  if (auth.accounts.length === 0) await auth.checkAuth();
+  await load();
+});
+// Ao sair da tela, guarda o estado atual pra reentrada instantânea.
+onBeforeUnmount(() => writeCache(tab.value));
 </script>
 
 <template>
@@ -598,6 +806,14 @@ onMounted(load);
           <span v-if="deadlineDate" class="text-gray-400">· aderir até {{ fmtDate(deadlineDate) }}</span>
         </p>
       </div>
+      <button
+        @click="refresh"
+        :disabled="loading"
+        title="Atualizar (descarta o cache e varre de novo)"
+        class="p-2 rounded-lg border hover:bg-gray-50 disabled:opacity-50 transition-colors dark:border-zinc-700 dark:hover:bg-zinc-800 flex-shrink-0"
+      >
+        <RefreshCw :size="18" :class="loading ? 'animate-spin' : ''" />
+      </button>
     </div>
 
     <!-- Dica sobre o tipo -->
@@ -640,6 +856,26 @@ onMounted(load);
       </form>
     </div>
 
+    <!-- Categorias dos elegíveis: começam desmarcadas; marque uma ou mais pra ver os anúncios -->
+    <div v-if="!searchMode && categories.length" class="flex flex-wrap items-center gap-2 mb-4">
+      <span class="text-[11px] font-bold uppercase tracking-wider text-gray-500">Categorias</span>
+      <button
+        v-for="c in categories"
+        :key="c.id"
+        @click="toggleCategory(c.id)"
+        class="text-xs px-2.5 py-1 rounded-full border transition-colors inline-flex items-center gap-1.5"
+        :class="activeCategories.has(c.id)
+          ? 'bg-brand-black text-brand-yellow border-brand-black dark:bg-brand-yellow dark:text-brand-black dark:border-brand-yellow'
+          : 'text-gray-500 border-gray-300 hover:bg-gray-50 dark:border-zinc-700 dark:hover:bg-zinc-800'"
+      >
+        <Check v-if="activeCategories.has(c.id)" :size="12" />
+        {{ c.name }} <span class="opacity-60">({{ c.count }})</span>
+      </button>
+      <span v-if="enriching" class="inline-flex items-center gap-1 text-xs text-gray-400">
+        <Loader2 :size="13" class="animate-spin" /> carregando preços…
+      </span>
+    </div>
+
     <!-- Avisos da busca (itens não encontrados / fora da promoção) -->
     <div v-if="searchMode && searchMessages.length" class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 mb-3 text-sm text-amber-800 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-200 space-y-0.5">
       <p v-for="(m, i) in searchMessages" :key="i">{{ m }}</p>
@@ -651,16 +887,28 @@ onMounted(load);
         <button @click="showSummary(null)" class="font-bold hover:opacity-70">✕</button>
       </div>
       <!-- Detalhe dos que falharam: MLB + motivo, pro usuário entender e corrigir. -->
-      <ul v-if="summaryFails.length" class="mt-1.5 space-y-0.5 text-[13px]">
-        <li v-for="f in summaryFails" :key="f.mlb" class="flex gap-1.5">
+      <ul v-if="shownFails.length" class="mt-1.5 space-y-0.5 text-[13px]">
+        <li v-for="f in shownFails" :key="f.mlb" class="flex gap-1.5">
           <span class="font-mono font-semibold flex-shrink-0">{{ f.mlb }}</span>
           <span class="opacity-90">— {{ f.reason }}</span>
         </li>
       </ul>
+      <p v-if="hiddenFailsCount" class="mt-1 text-[13px] opacity-80">
+        … e mais {{ hiddenFailsCount }} com erro.
+      </p>
+      <!-- Erro/parcial: leva ao histórico com o antes→depois e o motivo de cada item. -->
+      <button
+        v-if="summaryBatchId && auth.can('logs')"
+        @click="openBatchDetail"
+        class="mt-2 inline-flex items-center gap-1.5 text-[13px] font-semibold underline underline-offset-2 hover:opacity-70"
+      >
+        <ExternalLink :size="14" /> Ver detalhes no histórico
+      </button>
     </div>
 
-    <div v-if="loading || searching" class="flex items-center justify-center py-16">
+    <div v-if="loading || searching" class="flex flex-col items-center justify-center py-16 gap-2">
       <Loader2 :size="32" class="animate-spin text-meli-blue" />
+      <span v-if="loading && !searching" class="text-sm text-gray-500">Varrendo elegíveis e montando as categorias…</span>
     </div>
 
     <div v-else-if="errorMsg" class="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center text-amber-800">
@@ -684,7 +932,7 @@ onMounted(load);
           <template v-if="searchMode">Resultados da busca</template>
           <template v-else>{{ tab === "candidate" ? "Elegíveis" : "Participando" }}</template>
           <span class="font-normal text-gray-400">
-            ({{ items.length }}<span v-if="!searchMode && total != null"> de {{ total.toLocaleString("pt-BR") }}</span>)
+            ({{ visibleItems.length }}<span v-if="!searchMode && total != null"> de {{ total.toLocaleString("pt-BR") }}</span>)
           </span>
         </h3>
 
@@ -738,7 +986,7 @@ onMounted(load);
           <button
             v-if="searchMode || tab === 'candidate'"
             @click="askAction('add')"
-            :disabled="working || !canManage"
+            :disabled="working || !canManage || enriching"
             :title="!canManage ? 'Você não tem permissão para gerenciar promoções' : undefined"
             class="text-xs px-3 py-1.5 rounded-lg bg-brand-black text-brand-yellow font-semibold hover:opacity-90 disabled:opacity-50 inline-flex items-center gap-1.5 transition-opacity dark:bg-brand-yellow dark:text-brand-black"
           >
@@ -750,7 +998,7 @@ onMounted(load);
           <button
             v-if="!searchMode && editable && tab === 'started'"
             @click="askAction('update')"
-            :disabled="working || !canManage"
+            :disabled="working || !canManage || enriching"
             :title="!canManage ? 'Você não tem permissão para gerenciar promoções' : undefined"
             class="text-xs px-3 py-1.5 rounded-lg bg-brand-black text-brand-yellow font-semibold hover:opacity-90 disabled:opacity-50 inline-flex items-center gap-1.5 transition-opacity dark:bg-brand-yellow dark:text-brand-black"
           >
@@ -785,8 +1033,13 @@ onMounted(load);
             </tr>
           </thead>
           <tbody>
+            <tr v-if="visibleItems.length === 0">
+              <td :colspan="showRowActions ? 6 : 5" class="px-4 py-8 text-center text-gray-400 text-sm">
+                Nenhuma categoria selecionada — marque ao menos uma acima.
+              </td>
+            </tr>
             <tr
-              v-for="(it, index) in items"
+              v-for="(it, index) in visibleItems"
               :key="it.offer_id || it.id"
               class="border-b last:border-0 transition-colors dark:border-zinc-800"
               :class="selectedIds.has(it.id) ? 'bg-brand-yellow-soft/60 dark:bg-zinc-800/60' : 'hover:bg-gray-50 dark:hover:bg-zinc-800/40'"
@@ -932,17 +1185,6 @@ onMounted(load);
         </table>
       </div>
 
-      <!-- Carregar mais -->
-      <div v-if="hasMore" class="p-3 border-t dark:border-zinc-800 text-center">
-        <button
-          @click="loadMore"
-          :disabled="loadingMore"
-          class="text-sm px-4 py-2 rounded-lg border font-semibold hover:bg-gray-50 disabled:opacity-50 inline-flex items-center gap-2 transition-colors dark:border-zinc-700 dark:hover:bg-zinc-800"
-        >
-          <Loader2 v-if="loadingMore" :size="14" class="animate-spin" />
-          Carregar mais
-        </button>
-      </div>
     </div>
 
     <!-- Confirmação -->

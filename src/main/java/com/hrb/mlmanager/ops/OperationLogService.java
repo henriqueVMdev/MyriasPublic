@@ -1,5 +1,6 @@
 package com.hrb.mlmanager.ops;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.persistence.criteria.Predicate;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -336,8 +337,35 @@ public class OperationLogService {
         m.put("actor", log.getActor());
         m.put("user_id", log.getUserId());
         m.put("created_at", iso(log.getCreatedAt()));
+        m.put("failed_ids", failedItemIds(log.getResponse()));
         if (withResponse) m.put("response", log.getResponse());
         return m;
+    }
+
+    /**
+     * item_ids que falharam numa response, cobrindo os 3 formatos: promoção
+     * ({@code results[{item_id, ok}]}), bulk conta única ({@code errors[{item_id}]})
+     * e bulk multi-conta ({@code per_account[].errors[{item_id}]}). Sempre presente
+     * (mesmo sem a response completa) pra listagem marcar só o anúncio que falhou.
+     */
+    private static List<String> failedItemIds(JsonNode response) {
+        if (response == null || !response.isObject()) return List.of();
+        LinkedHashSet<String> ids = new LinkedHashSet<>();
+        for (JsonNode r : response.path("results")) {
+            String id = r.path("item_id").asText(null);
+            if (id != null && !id.isBlank() && !r.path("ok").asBoolean(false)) ids.add(id);
+        }
+        for (JsonNode e : response.path("errors")) {
+            String id = e.path("item_id").asText(null);
+            if (id != null && !id.isBlank()) ids.add(id);
+        }
+        for (JsonNode acc : response.path("per_account")) {
+            for (JsonNode e : acc.path("errors")) {
+                String id = e.path("item_id").asText(null);
+                if (id != null && !id.isBlank()) ids.add(id);
+            }
+        }
+        return new ArrayList<>(ids);
     }
 
     /** Shape enxuto da lista /logs (com response, sem batch_id/actor/user_id). */
@@ -351,6 +379,7 @@ public class OperationLogService {
         m.put("status", log.getStatus());
         m.put("error_message", log.getErrorMessage());
         m.put("created_at", iso(log.getCreatedAt()));
+        m.put("failed_ids", failedItemIds(log.getResponse()));
         return m;
     }
 

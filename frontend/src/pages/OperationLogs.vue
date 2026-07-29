@@ -15,6 +15,7 @@ import {
   operationSummary,
   operationChanges,
   affectedAds,
+  operationDisplayStats,
   listingTypeLabel,
 } from "@/lib/opHistory";
 import SelectMenu from "@/components/SelectMenu.vue";
@@ -130,6 +131,7 @@ const view = computed(() =>
     summary: operationSummary(op),
     changes: operationChanges(op),
     ads: affectedAds(op),
+    stats: operationDisplayStats(op),
   }))
 );
 </script>
@@ -222,9 +224,9 @@ const view = computed(() =>
             </div>
             <!-- Stats -->
             <div class="flex items-center gap-3 flex-shrink-0 text-xs">
-              <span class="text-gray-500">{{ row.op.success }}/{{ row.op.total }} ok</span>
-              <span v-if="row.op.error" class="text-red-500 font-medium">
-                {{ row.op.error }} erro{{ row.op.error !== 1 ? 's' : '' }}
+              <span class="text-gray-500">{{ row.stats.success }}/{{ row.stats.total }} ok</span>
+              <span v-if="row.stats.error" class="text-red-500 font-medium">
+                {{ row.stats.error }} {{ row.stats.isPromotion ? 'rejeitado' : 'erro' }}{{ row.stats.error !== 1 ? 's' : '' }}{{ row.stats.isPromotion ? ' pelo ML' : '' }}
               </span>
             </div>
             <component

@@ -50,11 +50,21 @@ public class MessagesController {
         security.require(request, "reply_messages");
         String text = body.path("text").asText("").trim();
         long accountUserId = body.path("account_user_id").asLong(0);
-        long buyerUserId = body.path("buyer_user_id").asLong(0);
-        if (text.isBlank() || accountUserId == 0 || buyerUserId == 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "text, account_user_id e buyer_user_id sao obrigatorios");
+        if (text.isBlank() || accountUserId == 0) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Texto e conta do Mercado Livre são obrigatórios.");
         }
-        return service.sendMessage(packId, accountUserId, buyerUserId, text);
+        if (text.length() > MeliMessagesService.DEFAULT_SELLER_MAX_MESSAGE_LENGTH) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "A mensagem ultrapassa o limite de "
+                            + MeliMessagesService.DEFAULT_SELLER_MAX_MESSAGE_LENGTH + " caracteres.");
+        }
+        long buyer = body.path("buyer_user_id").asLong(0);
+        Long buyerUserId = buyer == 0 ? null : buyer;
+        try {
+            return service.sendMessage(packId, accountUserId, text, buyerUserId);
+        } catch (MeliMessagesService.MeliMessageSendException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
     }
 }

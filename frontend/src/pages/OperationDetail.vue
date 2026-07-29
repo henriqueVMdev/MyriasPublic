@@ -9,6 +9,7 @@ import {
   operationChanges,
   listingTypeLabel,
   TYPE_LABELS,
+  operationDisplayStats,
 } from "@/lib/opHistory";
 import {
   ArrowLeft,
@@ -62,6 +63,15 @@ const group = computed<OperationGroup>(() => {
 
 const ads = computed(() => affectedAds(group.value));
 const changes = computed(() => operationChanges(group.value));
+const displayStats = computed(() => operationDisplayStats(group.value));
+const rejectionGroups = computed(() => {
+  const grouped = new Map<string, number>();
+  for (const ad of ads.value) {
+    if (ad.status !== "error" || !ad.errorMessage) continue;
+    grouped.set(ad.errorMessage, (grouped.get(ad.errorMessage) || 0) + 1);
+  }
+  return [...grouped.entries()].map(([message, count]) => ({ message, count }));
+});
 
 // MLB -> permalink (para clones, vem na response)
 const permalinks = computed(() => {
@@ -118,11 +128,23 @@ function sIcon(status: string) {
         <div>
           <h2 class="text-2xl font-extrabold tracking-tight">{{ operationLabel(group) }}</h2>
           <p class="text-sm text-gray-500">
-            {{ formatDate(group.created_at) }} · {{ group.success }}/{{ group.total }} com sucesso
-            <span v-if="group.error" class="text-red-500">· {{ group.error }} erro(s)</span>
+            {{ formatDate(group.created_at) }} · {{ displayStats.success }}/{{ displayStats.total }} com sucesso
+            <span v-if="displayStats.error" class="text-red-500">
+              · {{ displayStats.error }} {{ displayStats.isPromotion ? 'rejeitado(s) pelo ML' : 'erro(s)' }}
+            </span>
             <span v-if="group.actor"> · por <span class="font-medium text-gray-700">{{ group.actor }}</span></span>
           </p>
         </div>
+      </div>
+
+      <div
+        v-if="rejectionGroups.length"
+        class="mb-5 rounded-xl border border-red-200 bg-red-50/70 px-4 py-3 text-sm text-red-600 dark:border-red-900/50 dark:bg-red-900/15 dark:text-red-300"
+      >
+        <p class="font-semibold mb-1">O Mercado Livre rejeitou parte dos anúncios</p>
+        <p v-for="reason in rejectionGroups" :key="reason.message" class="mt-1">
+          <strong>{{ reason.count }} anúncio(s):</strong> {{ reason.message }}
+        </p>
       </div>
 
       <!-- O que mudou -->
@@ -184,6 +206,10 @@ function sIcon(status: string) {
                 <span v-if="ch.from"> → </span>{{ ch.to }}
               </span>
             </div>
+            <p v-if="ad.errorMessage" class="mt-1 pl-[26px] text-xs text-red-600">
+              {{ ad.errorMessage }}
+              <span v-if="ad.errorCode" class="text-red-400">({{ ad.errorCode }})</span>
+            </p>
           </div>
         </div>
       </div>

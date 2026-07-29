@@ -38,13 +38,7 @@ export interface ClonePreview {
     buying_mode: string;
     listing_type_id: string;
     pictures: Array<{ source: string }>;
-    attributes: Array<{
-      id: string;
-      name?: string;
-      value_id?: string;
-      value_name?: string;
-      value_struct?: { number: number; unit: string } | null;
-    }>;
+    attributes: Array<{ id: string; name?: string; value_id?: string; value_name?: string }>;
     sale_terms: Array<Record<string, unknown>>;
     shipping?: { local_pick_up?: boolean };
     description: string;
@@ -76,10 +70,21 @@ export async function createClone(
 export interface CloneMultiResult {
   total: number;
   success: number;
+  confirmed?: number;
+  pending?: number;
   results: Array<{
     user_id: number;
     success: boolean;
-    item?: { id: string; permalink: string; title: string };
+    item?: {
+      id: string;
+      permalink: string;
+      title: string;
+      seller_id?: number;
+      status?: string;
+      user_product_id?: string | null;
+      verification_status?: "confirmed" | "pending" | "failed";
+      verification_message?: string | null;
+    };
     error?: string;
   }>;
 }

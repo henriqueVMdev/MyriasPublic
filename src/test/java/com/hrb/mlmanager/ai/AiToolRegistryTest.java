@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.hrb.mlmanager.auth.AppUser;
+import com.hrb.mlmanager.competition.MeliCompetitionService;
 import com.hrb.mlmanager.dashboard.DashboardService;
 import com.hrb.mlmanager.meli.MeliAuthService;
 import com.hrb.mlmanager.meli.MeliBulkService;
@@ -30,6 +31,7 @@ class AiToolRegistryTest {
     private MeliQuestionsService questions;
     private MeliPromotionsService promotions;
     private OperationLogService logs;
+    private MeliCompetitionService competition;
     private AiToolRegistry registry;
 
     @BeforeEach
@@ -40,7 +42,8 @@ class AiToolRegistryTest {
         questions = mock(MeliQuestionsService.class);
         promotions = mock(MeliPromotionsService.class);
         logs = mock(OperationLogService.class);
-        registry = new AiToolRegistry(auth, dashboard, bulk, questions, promotions, logs);
+        competition = mock(MeliCompetitionService.class);
+        registry = new AiToolRegistry(auth, dashboard, bulk, questions, promotions, logs, competition);
     }
 
     private static AppUser userWith(boolean admin, String... perms) {
@@ -70,6 +73,71 @@ class AiToolRegistryTest {
         ObjectNode args = MAPPER.createObjectNode().put("sku", "ABC-1");
         registry.executeRead("get_items_by_sku", args);
         verify(bulk).getItemsBySkuAllAccounts("ABC-1");
+    }
+
+    @Test
+    void getItemsBySkuEnxugaOsItensENaoTruncaListaGrande() throws Exception {
+        // 10 itens com payload completo do Meli (pictures/attributes/variations)
+        // estouravam MAX_RESULT_CHARS — o modelo via só os 2 primeiros.
+        List<com.fasterxml.jackson.databind.JsonNode> gordos = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            ObjectNode item = MAPPER.createObjectNode()
+                    .put("id", "MLB" + i)
+                    .put("title", "Anúncio " + i)
+                    .put("price", 1900.0)
+                    .put("available_quantity", 5)
+                    .put("sold_quantity", 3)
+                    .put("status", "active")
+                    .put("permalink", "https://produto.mercadolivre.com.br/MLB" + i);
+            item.set("pictures", MAPPER.readTree("[{\"url\":\"" + "x".repeat(2000) + "\"}]"));
+            item.set("attributes", MAPPER.readTree("[{\"id\":\"BRAND\",\"value_name\":\"" + "y".repeat(1000) + "\"}]"));
+            gordos.add(item);
+        }
+        when(bulk.getItemsBySkuAllAccounts("SKU-10")).thenReturn(List.of(
+                Map.of("user_id", 1L, "nickname", "LOJA", "items", gordos)));
+
+        String out = registry.executeRead("get_items_by_sku",
+                MAPPER.createObjectNode().put("sku", "SKU-10"));
+
+        assertFalse(out.contains("truncated"), "resultado não pode truncar: " + out.length());
+        for (int i = 0; i < 10; i++) assertTrue(out.contains("MLB" + i), "faltou MLB" + i);
+        assertFalse(out.contains("pictures"));
+        assertFalse(out.contains("permalink"));
+    }
+
+    @Test
+    void getItemPicturesDespachaComContaEItem() {
+        when(bulk.getItemPictures(10L, "MLB1")).thenReturn(List.of(
+                Map.of("id", "PIC-1", "url", "https://http2.mlstatic.com/PIC-1.jpg")));
+        ObjectNode args = MAPPER.createObjectNode().put("account_user_id", 10L).put("item_id", "MLB1");
+        String out = registry.executeRead("get_item_pictures", args);
+        assertTrue(out.contains("PIC-1"), out);
+    }
+
+    @Test
+    void bulkAceitaPicturesEKeepCover() throws Exception {
+        var args = MAPPER.readTree("""
+            {"groups":[{"user_id":1,"item_ids":["MLB1"]}],
+             "updates":{"pictures":[{"source":"https://x/1.jpg"},{"id":"PIC-2"}],"keep_cover_photo":true}}
+            """);
+        when(bulk.bulkUpdateMultiAccount(anyList(), any(), isNull(), isNull(), isNull(), isNull()))
+                .thenReturn(Map.of("total", 1, "success", 1));
+        registry.executeWrite("bulk_update_items", args);
+        verify(bulk).bulkUpdateMultiAccount(anyList(),
+                argThat(updates -> updates.path("pictures").size() == 2
+                        && updates.path("keep_cover_photo").asBoolean()),
+                isNull(), isNull(), isNull(), isNull());
+    }
+
+    @Test
+    void summarizeMostraContagemDeFotosENaoJson() throws Exception {
+        var args = MAPPER.readTree("""
+            {"groups":[{"user_id":1,"item_ids":["MLB1","MLB2"]}],
+             "updates":{"pictures":[{"source":"https://x/1.jpg"},{"source":"https://x/2.jpg"},{"id":"PIC-3"}]}}
+            """);
+        String s = registry.summarize("bulk_update_items", args);
+        assertTrue(s.contains("fotos → 3 imagem(ns)"), s);
+        assertFalse(s.contains("https://"), s);
     }
 
     @Test
@@ -244,6 +312,36 @@ class AiToolRegistryTest {
             """);
         String s = registry.summarize("bulk_update_items", args);
         assertTrue(s.contains("price → {\"value\":9.9}"), s);
+    }
+
+    @Test
+    void analyzeItemCompetitionDespachaComContaItemECode() {
+        ObjectNode fake = MAPPER.createObjectNode().put("mode", "catalog").put("status", "competing");
+        when(competition.analyzeItem(10L, "MLB1", "OEM-9")).thenReturn(fake);
+        ObjectNode args = MAPPER.createObjectNode()
+                .put("account_user_id", 10L).put("item_id", "MLB1").put("code", "OEM-9");
+        String out = registry.executeRead("analyze_item_competition", args);
+        assertTrue(out.contains("competing"), out);
+        verify(competition).analyzeItem(10L, "MLB1", "OEM-9");
+    }
+
+    @Test
+    void inspectListingDespachaContaEItemId() {
+        when(competition.inspectListing(10L, "MLB2")).thenReturn(MAPPER.createObjectNode().put("title", "Rival"));
+        registry.executeRead("inspect_listing",
+                MAPPER.createObjectNode().put("account_user_id", 10L).put("item_id", "MLB2"));
+        verify(competition).inspectListing(10L, "MLB2");
+    }
+
+    @Test
+    void toolsDeConcorrenciaSoAparecemComAPermissao() {
+        List<String> sem = toolNames(registry.toolDefinitions(userWith(false, "assistente")));
+        assertFalse(sem.contains("analyze_item_competition"));
+        List<String> com = toolNames(registry.toolDefinitions(userWith(false, "assistente", "concorrencia")));
+        assertTrue(com.contains("analyze_item_competition"));
+        assertTrue(com.contains("inspect_listing"));
+        assertTrue(com.contains("get_competition_report"));
+        assertTrue(com.contains("get_category_discovery"));
     }
 
     @Test

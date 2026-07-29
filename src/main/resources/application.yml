@@ -14,14 +14,16 @@ spring:
       max-file-size: 10MB
       max-request-size: 12MB
 
+# ${VAR:${env.VAR:default}} → usa a variável de ambiente real; senão a do .env
+# (spring-dotenv expõe o arquivo com prefixo "env."); senão o default.
 app:
-  secret-key: ${APP_SECRET_KEY:dev-insecure-change-me}   # assina os tokens de sessão
-  frontend-url: ${FRONTEND_URL:http://localhost:5173}
+  secret-key: ${APP_SECRET_KEY:${env.APP_SECRET_KEY:dev-insecure-change-me}}   # assina os tokens de sessão
+  frontend-url: ${FRONTEND_URL:${env.FRONTEND_URL:http://localhost:5173}}
 
 meli:                                                    # OAuth + cliente Mercado Livre (Fatia 2)
-  app-id: ${MELI_APP_ID:}
-  secret-key: ${MELI_SECRET_KEY:}
-  redirect-uri: ${MELI_REDIRECT_URI:http://localhost:5173/api/auth/callback}
+  app-id: ${MELI_APP_ID:${env.MELI_APP_ID:}}
+  secret-key: ${MELI_SECRET_KEY:${env.MELI_SECRET_KEY:}}
+  redirect-uri: ${MELI_REDIRECT_URI:${env.MELI_REDIRECT_URI:http://localhost:5173/api/auth/callback}}
   max-requests-per-minute: ${MELI_MAX_RPM:1500}
   max-concurrent-requests: ${MELI_MAX_CONCURRENT:10}
 
@@ -29,6 +31,6 @@ server:
   port: 8000
 
 openrouter:                                              # Assistente de IA
-  api-key: ${OPENROUTER_API_KEY:}
-  model: ${OPENROUTER_MODEL:anthropic/claude-sonnet-4.5}
-  models: ${OPENROUTER_MODELS:anthropic/claude-sonnet-4.5,openai/gpt-4.1,google/gemini-2.5-pro}
+  api-key: ${OPENROUTER_API_KEY:${env.OPENROUTER_API_KEY:}}
+  model: ${OPENROUTER_MODEL:${env.OPENROUTER_MODEL:anthropic/claude-sonnet-4.5}}
+  models: ${OPENROUTER_MODELS:${env.OPENROUTER_MODELS:anthropic/claude-sonnet-4.5,openai/gpt-4.1,google/gemini-2.5-pro}}

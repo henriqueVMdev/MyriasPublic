@@ -80,33 +80,64 @@ const PACKAGE_ATTR_IDS = new Set([
   "SELLER_PACKAGE_LENGTH", "SELLER_PACKAGE_WEIGHT",
 ]);
 
-function canonicalPackageAttrId(id: string): string | null {
-  switch (id.toUpperCase()) {
-    case "PACKAGE_HEIGHT":
-    case "SELLER_PACKAGE_HEIGHT":
-      return "seller_package_height";
-    case "PACKAGE_WIDTH":
-    case "SELLER_PACKAGE_WIDTH":
-      return "seller_package_width";
-    case "PACKAGE_LENGTH":
-    case "SELLER_PACKAGE_LENGTH":
-      return "seller_package_length";
-    case "PACKAGE_WEIGHT":
-    case "SELLER_PACKAGE_WEIGHT":
-      return "seller_package_weight";
-    default:
-      return null;
-  }
-}
+const PACKAGE_ATTR_CONFIG: Record<string, {
+  id: string;
+  name: string;
+  unit: string;
+  allowed_units: Array<{ id: string; name: string }>;
+}> = {
+  PACKAGE_HEIGHT: {
+    id: "seller_package_height",
+    name: "Altura da embalagem",
+    unit: "cm",
+    allowed_units: [{ id: "cm", name: "cm" }],
+  },
+  SELLER_PACKAGE_HEIGHT: {
+    id: "seller_package_height",
+    name: "Altura da embalagem",
+    unit: "cm",
+    allowed_units: [{ id: "cm", name: "cm" }],
+  },
+  PACKAGE_WIDTH: {
+    id: "seller_package_width",
+    name: "Largura da embalagem",
+    unit: "cm",
+    allowed_units: [{ id: "cm", name: "cm" }],
+  },
+  SELLER_PACKAGE_WIDTH: {
+    id: "seller_package_width",
+    name: "Largura da embalagem",
+    unit: "cm",
+    allowed_units: [{ id: "cm", name: "cm" }],
+  },
+  PACKAGE_LENGTH: {
+    id: "seller_package_length",
+    name: "Comprimento da embalagem",
+    unit: "cm",
+    allowed_units: [{ id: "cm", name: "cm" }],
+  },
+  SELLER_PACKAGE_LENGTH: {
+    id: "seller_package_length",
+    name: "Comprimento da embalagem",
+    unit: "cm",
+    allowed_units: [{ id: "cm", name: "cm" }],
+  },
+  PACKAGE_WEIGHT: {
+    id: "seller_package_weight",
+    name: "Peso da embalagem",
+    unit: "g",
+    allowed_units: [{ id: "g", name: "g" }, { id: "kg", name: "kg" }],
+  },
+  SELLER_PACKAGE_WEIGHT: {
+    id: "seller_package_weight",
+    name: "Peso da embalagem",
+    unit: "g",
+    allowed_units: [{ id: "g", name: "g" }, { id: "kg", name: "kg" }],
+  },
+};
 
-function packageAttrName(id: string): string {
-  switch (id) {
-    case "seller_package_height": return "Altura da embalagem";
-    case "seller_package_width": return "Largura da embalagem";
-    case "seller_package_length": return "Comprimento da embalagem";
-    case "seller_package_weight": return "Peso da embalagem";
-    default: return id;
-  }
+function packageAttrConfig(id: string) {
+  return PACKAGE_ATTR_CONFIG[id.toUpperCase()];
 }
 
 const packageAttrs = computed(() => editableAttrs.value.filter((a) => PACKAGE_ATTR_IDS.has(a.id)));
@@ -318,40 +349,35 @@ async function fetchPreview() {
       if (id) origAttrsById[id] = { value_struct: a.value_struct as { number: number; unit: string } | null };
     }
 
-    const normalizedSuggestedAttrs = Array.from(
-      s.attributes.reduce((attrs, attr) => {
-        const canonicalId = canonicalPackageAttrId(attr.id);
-        const id = canonicalId || attr.id;
-        if (!attrs.has(id)) {
-          attrs.set(id, {
-            ...attr,
-            id,
-            name: canonicalId ? packageAttrName(canonicalId) : attr.name,
-          });
-        }
-        return attrs;
-      }, new Map<string, (typeof s.attributes)[number]>()).values()
-    );
-
-    editableAttrs.value = normalizedSuggestedAttrs.map((a) => {
+    const mappedAttrs = s.attributes.map((a) => {
       const def = defById[a.id];
+      const packageConfig = packageAttrConfig(a.id);
       const base: EditableAttr = {
-        id: a.id,
-        name: a.name || origByName[a.id] || a.id,
+        id: packageConfig?.id || a.id,
+        name: packageConfig?.name || a.name || origByName[a.id] || a.id,
         value_name: a.value_name || "",
         value_id: a.value_id,
         fromOriginal: true,
         required: !!(def?.tags?.required || def?.tags?.catalog_required),
-        value_type: def?.value_type,
+        value_type: packageConfig ? "number_unit" : def?.value_type,
         values: def?.values,
-        allowed_units: def?.allowed_units,
-        default_unit: def?.default_unit,
+        allowed_units: packageConfig?.allowed_units || def?.allowed_units,
+        default_unit: packageConfig?.unit || def?.default_unit,
         allow_custom_value: def?.tags?.allow_custom_value,
       };
-      if (def?.value_type === "number_unit") {
+      if (base.value_type === "number_unit") {
         const fromOrig = origAttrsById[a.id];
-        const merged = { ...a, value_struct: fromOrig?.value_struct ?? a.value_struct ?? undefined };
-        const { number, unit } = parseNumUnit(merged, def);
+        const suggestedStruct = (a as typeof a & {
+          value_struct?: { number: number; unit: string } | null;
+        }).value_struct;
+        const merged = {
+          ...a,
+          value_struct: fromOrig?.value_struct ?? suggestedStruct ?? undefined,
+        };
+        const { number, unit } = parseNumUnit(merged, {
+          ...def,
+          default_unit: packageConfig?.unit || def?.default_unit,
+        } as CategoryAttribute);
         base.numberValue = number;
         base.unitValue = unit;
         if (number !== null && unit) {
@@ -360,6 +386,31 @@ async function fetchPreview() {
       }
       return base;
     });
+
+    // A API pode devolver a mesma medida nos formatos PACKAGE_* e
+    // SELLER_PACKAGE_*. Ambos representam o mesmo campo e devem aparecer uma vez.
+    const deduplicatedAttrs: EditableAttr[] = [];
+    const packageAttrIndexes = new Map<string, number>();
+    for (const attr of mappedAttrs) {
+      const packageConfig = packageAttrConfig(attr.id);
+      if (!packageConfig) {
+        deduplicatedAttrs.push(attr);
+        continue;
+      }
+
+      const existingIndex = packageAttrIndexes.get(packageConfig.id);
+      if (existingIndex === undefined) {
+        packageAttrIndexes.set(packageConfig.id, deduplicatedAttrs.length);
+        deduplicatedAttrs.push(attr);
+        continue;
+      }
+
+      const existing = deduplicatedAttrs[existingIndex];
+      if (existing.numberValue == null && attr.numberValue != null) {
+        deduplicatedAttrs[existingIndex] = attr;
+      }
+    }
+    editableAttrs.value = deduplicatedAttrs;
     const skuAttr = preview.value.original.attributes.find((a) => a.id === "SELLER_SKU");
     const sku = skuAttr?.value_name || "";
     // Garantia — lê de sale_terms.WARRANTY_TYPE e WARRANTY_TIME
@@ -736,7 +787,13 @@ async function publishClone(skipConfirm = false) {
   }
 
   const userIds = Array.from(selectedAccounts.value);
-  const merged: CloneMultiResultWithType = { total: 0, success: 0, results: [] };
+  const merged: CloneMultiResultWithType = {
+    total: 0,
+    success: 0,
+    confirmed: 0,
+    pending: 0,
+    results: [],
+  };
   // Um id por publicação — agrupa todos os anúncios (títulos × tipos × contas)
   // num único card "Cópia de anúncio" no histórico.
   const batchId = crypto.randomUUID();
@@ -748,6 +805,8 @@ async function publishClone(skipConfirm = false) {
     responses.forEach((resp, idx) => {
       merged.total += resp.total;
       merged.success += resp.success;
+      merged.confirmed = (merged.confirmed || 0) + (resp.confirmed || 0);
+      merged.pending = (merged.pending || 0) + (resp.pending || 0);
       for (const r of resp.results) {
         merged.results.push({
           ...r,
@@ -877,20 +936,37 @@ function formatError(err: unknown): string {
     <div
       v-if="multiResult"
       class="mb-4 p-4 rounded-xl border"
-      :class="multiResult.success === multiResult.total ? 'bg-green-50 border-green-200' : multiResult.success > 0 ? 'bg-yellow-50 border-yellow-200' : 'bg-red-50 border-red-200'"
+      :class="(multiResult.confirmed || 0) === multiResult.total
+        ? 'bg-green-50 border-green-200'
+        : multiResult.success > 0
+          ? 'bg-yellow-50 border-yellow-200'
+          : 'bg-red-50 border-red-200'"
     >
       <div class="flex items-center gap-2 font-medium mb-2">
-        <CheckCircle v-if="multiResult.success === multiResult.total" :size="18" class="text-green-600" />
+        <CheckCircle v-if="(multiResult.confirmed || 0) === multiResult.total" :size="18" class="text-green-600" />
         <AlertTriangle v-else :size="18" class="text-yellow-600" />
-        Publicado em {{ multiResult.success }}/{{ multiResult.total }} conta(s)
+        Criado em {{ multiResult.success }}/{{ multiResult.total }} conta(s)
       </div>
+      <p class="text-xs mb-2 text-gray-600">
+        {{ multiResult.confirmed || 0 }} confirmado(s) na conta
+        <template v-if="multiResult.pending"> · {{ multiResult.pending }} aguardando processamento</template>
+      </p>
       <div class="space-y-1">
         <div
           v-for="(r, idx) in multiResult.results"
           :key="`${r.user_id}-${r.listing_type}-${idx}`"
           class="flex items-center gap-2 text-sm"
         >
-          <CheckCircle v-if="r.success" :size="14" class="text-green-600 flex-shrink-0" />
+          <CheckCircle
+            v-if="r.success && r.item?.verification_status === 'confirmed'"
+            :size="14"
+            class="text-green-600 flex-shrink-0"
+          />
+          <Loader2
+            v-else-if="r.success && r.item?.verification_status === 'pending'"
+            :size="14"
+            class="text-amber-600 animate-spin flex-shrink-0"
+          />
           <XCircle v-else :size="14" class="text-red-600 flex-shrink-0" />
           <span class="font-medium">{{ accountNickname(r.user_id) }}:</span>
           <span
@@ -903,8 +979,28 @@ function formatError(err: unknown): string {
             class="text-xs text-gray-600 italic truncate max-w-[16rem]"
             :title="r.title_variant"
           >"{{ r.title_variant }}"</span>
-          <template v-if="r.success && r.item">
+          <template v-if="r.item">
             <span class="text-gray-600">{{ r.item.id }}</span>
+            <span
+              v-if="r.item.verification_status === 'confirmed'"
+              class="text-[10px] font-semibold text-green-700 bg-green-100 rounded-full px-2 py-0.5"
+            >
+              confirmado na conta
+            </span>
+            <span
+              v-else-if="r.item.verification_status === 'pending'"
+              class="text-[10px] font-semibold text-amber-700 bg-amber-100 rounded-full px-2 py-0.5"
+              :title="r.item.verification_message || ''"
+            >
+              aguardando Mercado Livre
+            </span>
+            <span
+              v-else-if="!r.success"
+              class="text-[10px] font-semibold text-red-700 bg-red-100 rounded-full px-2 py-0.5"
+              :title="r.item.verification_message || r.error || ''"
+            >
+              não confirmado
+            </span>
             <a
               v-if="r.item.permalink"
               :href="r.item.permalink"
@@ -913,6 +1009,9 @@ function formatError(err: unknown): string {
             >
               Ver <ExternalLink :size="12" />
             </a>
+            <span v-if="!r.success" class="text-red-600 text-xs truncate">
+              {{ formatError(r.error || r.item.verification_message) }}
+            </span>
           </template>
           <span v-else class="text-red-600 text-xs truncate">{{ formatError(r.error) }}</span>
         </div>

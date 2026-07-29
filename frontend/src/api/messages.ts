@@ -41,11 +41,18 @@ export interface ThreadMessage {
   status: string | null;
 }
 
+export interface ConversationStatus {
+  status?: string | null;
+  substatus?: string | null;
+}
+
 export interface Thread {
   pack_id: string;
   seller_user_id: number;
   buyer_id: number | null;
   messages: ThreadMessage[];
+  conversation_status?: ConversationStatus | string | null;
+  seller_max_message_length?: number;
   error?: string;
 }
 
@@ -58,10 +65,11 @@ export async function listUnread(enrich = false): Promise<UnreadResponse> {
 
 export async function getThread(
   packId: string,
-  accountUserId: number
+  accountUserId: number,
+  markRead = false
 ): Promise<Thread> {
   const { data } = await api.get<Thread>(`/messages/packs/${packId}`, {
-    params: { account_user_id: accountUserId },
+    params: { account_user_id: accountUserId, mark_read: markRead ? 1 : 0 },
   });
   return data;
 }
@@ -69,13 +77,11 @@ export async function getThread(
 export async function sendReply(
   packId: string,
   accountUserId: number,
-  buyerUserId: number,
   text: string
 ): Promise<unknown> {
   const { data } = await api.post(`/messages/packs/${packId}/reply`, {
     text,
     account_user_id: accountUserId,
-    buyer_user_id: buyerUserId,
   });
   return data;
 }

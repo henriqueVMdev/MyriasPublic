@@ -102,6 +102,56 @@ public class MeliPerformanceService {
 
     // ---------- deleção de anúncio ----------
 
+    private ObjectNode inventoryRow(JsonNode it) {
+        ObjectNode o = M.createObjectNode();
+        o.put("id", txt(it, "id"));
+        o.put("title", it.path("title").asText(""));
+        o.put("sku", extractSku(it));
+        o.set("status", it.get("status"));
+        o.set("price", it.get("price"));
+        o.set("available_quantity", it.get("available_quantity"));
+        o.put("sold_quantity", it.path("sold_quantity").asInt(0));
+        o.set("listing_type_id", it.get("listing_type_id"));
+        o.set("permalink", it.get("permalink"));
+        o.set("thumbnail", it.get("thumbnail"));
+        o.set("category_id", it.get("category_id"));
+        o.set("date_created", it.get("date_created"));
+        o.set("original_price", it.get("original_price"));
+        JsonNode shipping = it.get("shipping");
+        o.set("logistic_type", shipping == null ? null : shipping.get("logistic_type"));
+        return o;
+    }
+
+    /**
+     * Insere/atualiza um item no snapshot após uma criação pelo app. Não altera
+     * {@code scanned_at}: o snapshot continua representando a última varredura
+     * completa, mas passa a incluir imediatamente o item recém-confirmado.
+     */
+    // ponytail: sem lock por usuário (como removeItemFromInventory/markClosedInInventory);
+    // upgrade pra lock por conta se dois clones simultâneos na mesma conta colidirem.
+    public boolean upsertInventoryItem(long userId, JsonNode item) {
+        String itemId = txt(item, "id");
+        if (itemId == null || itemId.isBlank()) return false;
+        JsonNode inv = loadInventory(userId);
+        if (inv == null || !inv.has("items")) return false;
+        ObjectNode row = inventoryRow(item);
+        ArrayNode rebuilt = M.createArrayNode();
+        boolean replaced = false;
+        for (JsonNode it : inv.get("items")) {
+            if (itemId.equals(txt(it, "id"))) {
+                rebuilt.add(row);
+                replaced = true;
+            } else {
+                rebuilt.add(it);
+            }
+        }
+        if (!replaced) rebuilt.insert(0, row);
+        ((ObjectNode) inv).set("items", rebuilt);
+        save(userId, INVENTORY, inv);
+        log.info("perf: snapshot atualizado após criação item={} user={}", itemId, userId);
+        return true;
+    }
+
     public boolean removeItemFromInventory(long userId, String itemId) {
         JsonNode inv = loadInventory(userId);
         if (inv == null || !inv.has("items")) return false;
@@ -179,23 +229,7 @@ public class MeliPerformanceService {
         ArrayNode items = M.createArrayNode();
         for (JsonNode it : raw) {
             if (txt(it, "id") == null) continue;
-            ObjectNode o = M.createObjectNode();
-            o.put("id", txt(it, "id"));
-            o.put("title", it.path("title").asText(""));
-            o.put("sku", extractSku(it));
-            o.set("status", it.get("status"));
-            o.set("price", it.get("price"));
-            o.set("available_quantity", it.get("available_quantity"));
-            o.put("sold_quantity", it.path("sold_quantity").asInt(0));
-            o.set("listing_type_id", it.get("listing_type_id"));
-            o.set("permalink", it.get("permalink"));
-            o.set("thumbnail", it.get("thumbnail"));
-            o.set("category_id", it.get("category_id"));
-            o.set("date_created", it.get("date_created"));
-            o.set("original_price", it.get("original_price"));
-            JsonNode shipping = it.get("shipping");
-            o.set("logistic_type", shipping == null ? null : shipping.get("logistic_type"));
-            items.add(o);
+            items.add(inventoryRow(it));
         }
         ObjectNode snap = M.createObjectNode();
         snap.put("user_id", userId);

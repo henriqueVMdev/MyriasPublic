@@ -149,12 +149,32 @@ public class MeliBulkService {
         return out;
     }
 
+    /** Fotos atuais de um anúncio (id + url, em ordem) — usado pela tool da IA. */
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> getItemPictures(long userId, String itemId) {
+        MeliResponse resp = client.get("/items/" + itemId, Map.of("attributes", "pictures"), userId);
+        List<Map<String, Object>> out = new ArrayList<>();
+        JsonNode pics = resp.data() == null ? null : resp.data().path("pictures");
+        if (pics != null && pics.isArray()) {
+            for (JsonNode p : pics) {
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("id", p.path("id").asText());
+                m.put("url", p.path("secure_url").asText(p.path("url").asText("")));
+                out.add(m);
+            }
+        }
+        return out;
+    }
+
     @Transactional(readOnly = true)
     public List<JsonNode> getItemsBySku(long userId, String sku) {
-        List<String> itemIds = searchItemIdsBySku(userId, "seller_sku", sku);
-        if (itemIds.isEmpty()) itemIds = searchItemIdsBySku(userId, "sku", sku);
+        // União das duas buscas: seller_sku indexa o seller_custom_field e sku o
+        // atributo SELLER_SKU — usar uma só (ou fallback) deixa anúncios de fora.
+        LinkedHashSet<String> itemIds = new LinkedHashSet<>();
+        itemIds.addAll(searchItemIdsBySku(userId, "seller_sku", sku));
+        itemIds.addAll(searchItemIdsBySku(userId, "sku", sku));
         if (itemIds.isEmpty()) return List.of();
-        return client.multiGetItems(itemIds, ITEM_FIELDS, userId);
+        return client.multiGetItems(new ArrayList<>(itemIds), ITEM_FIELDS, userId);
     }
 
     @Transactional(readOnly = true)
@@ -1325,11 +1345,16 @@ public class MeliBulkService {
     }
 
     private List<String> searchItemIdsBySku(long userId, String paramName, String sku) {
-        MeliResponse resp = client.get("/users/" + userId + "/items/search",
-                Map.of(paramName, sku, "limit", "50"), userId);
         List<String> ids = new ArrayList<>();
-        JsonNode results = resp.data() == null ? null : resp.data().path("results");
-        if (results != null && results.isArray()) results.forEach(n -> ids.add(n.asText()));
+        // ponytail: teto de 1000 ids por SKU; paginação real se algum dia passar disso
+        for (int offset = 0; offset < 1000; offset += 50) {
+            MeliResponse resp = client.get("/users/" + userId + "/items/search",
+                    Map.of(paramName, sku, "limit", "50", "offset", String.valueOf(offset)), userId);
+            JsonNode results = resp.data() == null ? null : resp.data().path("results");
+            int before = ids.size();
+            if (results != null && results.isArray()) results.forEach(n -> ids.add(n.asText()));
+            if (ids.size() - before < 50) break;
+        }
         return ids;
     }
 

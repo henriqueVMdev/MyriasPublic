@@ -2,7 +2,6 @@ package com.hrb.mlmanager.meli;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.hrb.mlmanager.meli.MeliClient.MeliResponse;
 import com.hrb.mlmanager.ops.OperationLog;
@@ -10,6 +9,7 @@ import com.hrb.mlmanager.ops.OperationLogRepository;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -26,6 +26,19 @@ public class MeliMessagesService {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final Pattern PACK_PATTERN = Pattern.compile("/packs/(\\d+)");
     private static final Pattern SELLER_PATTERN = Pattern.compile("/sellers/(\\d+)");
+
+    // O ML passou a intermediar mensagens pós-venda por um "agente": o destinatário
+    // é o agent id, não o comprador. Esse id também aparece como participante nas
+    // threads e não pode ser confundido com o buyer.
+    static final long MLB_MESSAGING_AGENT_ID = 3037675074L;
+    static final int DEFAULT_SELLER_MAX_MESSAGE_LENGTH = 350;
+
+    /** Erro de envio já traduzido para exibição segura na interface. */
+    public static class MeliMessageSendException extends RuntimeException {
+        public MeliMessageSendException(String message) {
+            super(message);
+        }
+    }
 
     private final MeliClient client;
     private final MeliAuthService auth;
@@ -110,18 +123,22 @@ public class MeliMessagesService {
             for (Map<String, Object> m : messages) {
                 for (String field : List.of("from_user_id", "to_user_id")) {
                     Object v = m.get(field);
-                    if (v instanceof Number n && n.longValue() != sellerUserId) {
+                    if (v instanceof Number n && n.longValue() != sellerUserId
+                            && n.longValue() != MLB_MESSAGING_AGENT_ID) {
                         buyerId = n.longValue();
                         break;
                     }
                 }
                 if (buyerId != null) break;
             }
+            long sellerMax = resp.data() == null ? 0 : resp.data().path("seller_max_message_length").asLong(0);
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("pack_id", packId);
             out.put("seller_user_id", sellerUserId);
             out.put("buyer_id", buyerId);
             out.put("messages", messages);
+            out.put("conversation_status", resp.data() == null ? null : nullIfMissing(resp.data().path("conversation_status")));
+            out.put("seller_max_message_length", sellerMax > 0 ? sellerMax : DEFAULT_SELLER_MAX_MESSAGE_LENGTH);
             return out;
         } catch (Exception e) {
             log.warn("Get thread falhou pack={} user={}: {}", packId, sellerUserId, e.getMessage());
@@ -129,37 +146,59 @@ public class MeliMessagesService {
         }
     }
 
+    /** Envia mensagem pós-venda usando o agente de mensagens do Mercado Livre. */
     @Transactional
-    public JsonNode sendMessage(String packId, long sellerUserId, long buyerUserId, String text) {
+    public JsonNode sendMessage(String packId, long sellerUserId, String text, Long buyerUserId) {
         ObjectNode payload = MAPPER.createObjectNode();
         payload.put("pack_id", packId);
-        payload.put("buyer_user_id", buyerUserId);
+        if (buyerUserId != null) payload.put("buyer_user_id", buyerUserId); else payload.putNull("buyer_user_id");
+        payload.put("recipient_agent_id", MLB_MESSAGING_AGENT_ID);
         payload.put("text", text);
         payload.put("nickname", nicknameFor(sellerUserId));
 
         ObjectNode body = MAPPER.createObjectNode();
         body.set("from", MAPPER.createObjectNode().put("user_id", String.valueOf(sellerUserId)));
-        ArrayNode to = MAPPER.createArrayNode();
-        to.add(MAPPER.createObjectNode().put("user_id", String.valueOf(buyerUserId)));
-        body.set("to", to);
+        body.set("to", MAPPER.createObjectNode().put("user_id", String.valueOf(MLB_MESSAGING_AGENT_ID)));
         body.put("text", text);
 
+        JsonNode errorResponse = null;
         try {
             MeliResponse resp = client.post("/messages/packs/" + packId + "/sellers/" + sellerUserId,
                     Map.of("tag", "post_sale"), sellerUserId, body);
             if (resp.status() != 200 && resp.status() != 201) {
-                throw new IllegalStateException("ML rejeitou envio: " + resp.status() + " " + resp.data());
+                errorResponse = resp.data();
+                throw new MeliMessageSendException(friendlySendError(resp.status(), resp.data()));
             }
             OperationLog op = new OperationLog("send_message", null, payload, resp.data(), "success", null);
             op.setUserId(sellerUserId);
             logs.save(op);
             return resp.data();
         } catch (Exception e) {
-            OperationLog op = new OperationLog("send_message", null, payload, null, "error", e.getMessage());
+            OperationLog op = new OperationLog("send_message", null, payload, errorResponse, "error", e.getMessage());
             op.setUserId(sellerUserId);
             logs.save(op);
             throw e;
         }
+    }
+
+    private static String friendlySendError(int status, JsonNode data) {
+        boolean obj = data != null && data.isObject();
+        String code = obj ? data.path("code").asText("").toLowerCase(Locale.ROOT) : "";
+        String message = obj
+                ? data.path("message").asText("").toLowerCase(Locale.ROOT)
+                : String.valueOf(data).toLowerCase(Locale.ROOT);
+        String errorText = code + " " + message;
+        if (errorText.contains("blocked") || errorText.contains("forbidden")) {
+            return "O Mercado Livre bloqueou o envio nesta conversa. "
+                    + "Isso pode ocorrer por prazo encerrado, bloqueio do comprador ou restrição da venda.";
+        }
+        if (errorText.contains("too_long") || errorText.contains("length")) {
+            return "A mensagem ultrapassa o limite de " + DEFAULT_SELLER_MAX_MESSAGE_LENGTH + " caracteres.";
+        }
+        if (status == 401) {
+            return "A conexão com esta conta do Mercado Livre expirou. Reconecte a conta e tente novamente.";
+        }
+        return "O Mercado Livre não aceitou a mensagem. Atualize a conversa e tente novamente.";
     }
 
     private List<JsonNode> fetchUnreadForAccount(long userId, int limit) {
@@ -373,7 +412,7 @@ public class MeliMessagesService {
         }
         Long sellerFromResource = extractSellerIdFromResource(item);
         long seller = sellerFromResource == null ? sellerUserId : sellerFromResource;
-        for (Long c : candidates) if (c != seller) return c;
+        for (Long c : candidates) if (c != seller && c != MLB_MESSAGING_AGENT_ID) return c;
         return null;
     }
 

@@ -99,8 +99,11 @@ public class MeliClient {
                     continue;
                 }
 
-                // 429 = rate limited; 423 = recurso travado; 5xx = erro do servidor.
-                if (resp.status() == 429 || resp.status() == 423) {
+                // 429 = rate limited; 423 = recurso travado (comum em DELETEs no
+                // mesmo user-product); 409 = conflito de versão no KVS (FURY_MULTI_BATCH),
+                // comum ao editar irmãos do mesmo user_product/family em sequência —
+                // transitório, o próximo attempt costuma passar. 5xx = erro do servidor.
+                if (resp.status() == 429 || resp.status() == 423 || resp.status() == 409) {
                     sleepBackoff((int) Math.pow(BACKOFF_BASE, attempt + 1), resp.status(), method, path);
                     continue;
                 }

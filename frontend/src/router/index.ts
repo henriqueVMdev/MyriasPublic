@@ -123,11 +123,16 @@ const router = createRouter({
           redirect: { name: "logs", query: { tab: "atendimento" } },
         },
         {
-          path: "assistente",
-          name: "assistant-chat",
-          component: () => import("@/pages/AiChat.vue"),
-          // Mesma permissão do widget flutuante (Layout.vue)
-          meta: { perm: "assistente" },
+          path: "qualidade",
+          name: "quality",
+          component: () => import("@/pages/ListingQuality.vue"),
+          meta: { perm: "quality" },
+        },
+        {
+          path: "concorrencia",
+          name: "competition",
+          component: () => import("@/pages/Concorrencia.vue"),
+          meta: { perm: "concorrencia" },
         },
         {
           path: "usuarios",
@@ -160,7 +165,8 @@ const SECTION_ROUTES: { perm: string; path: string }[] = [
   { perm: "perguntas", path: "/atendimento/perguntas" },
   { perm: "mensagens", path: "/atendimento/mensagens" },
   { perm: "atendimento_historico", path: "/atendimento/historico" },
-  { perm: "assistente", path: "/assistente" },
+  { perm: "quality", path: "/qualidade" },
+  { perm: "concorrencia", path: "/concorrencia" },
 ];
 
 function firstAllowedPath(auth: ReturnType<typeof useAuthStore>): string | null {

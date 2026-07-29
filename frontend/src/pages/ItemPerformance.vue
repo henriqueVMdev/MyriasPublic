@@ -6,6 +6,7 @@ import StatusBadge from "@/components/StatusBadge.vue";
 import ShippingBadge from "@/components/ShippingBadge.vue";
 import PromoPrice from "@/components/PromoPrice.vue";
 import ItemAdsCard from "@/components/ItemAdsCard.vue";
+import CompetitionCard from "@/components/CompetitionCard.vue";
 import MetricStrip from "@/components/MetricStrip.vue";
 import MetricStripItem from "@/components/MetricStripItem.vue";
 import AdsOrganicLineChart from "@/components/AdsOrganicLineChart.vue";
@@ -169,6 +170,9 @@ onMounted(load);
 
       <!-- Publicidade (Mercado Ads) — buscado sob demanda por item -->
       <ItemAdsCard :ads="detail.ads" :days="days" class="mb-4" />
+
+      <!-- Concorrência — análise ao vivo (catálogo/buy box), buscada sob demanda -->
+      <CompetitionCard :item-id="itemId" class="mb-4" />
 
       <!-- Gráfico de visitas -->
       <div class="bg-white rounded-xl border shadow-sm p-5 mb-4">
