@@ -145,20 +145,17 @@ function onKeydown(e: KeyboardEvent) {
 <template>
   <!-- Acima do toggle de tema, que usa bottom-4 -->
   <div class="fixed bottom-20 right-4 z-50">
-    <!-- Botão flutuante com glow -->
+    <!-- Botão flutuante em gradiente -->
     <button
       @click="toggle"
-      class="ai-fab relative w-14 h-14 rounded-full flex items-center justify-center transition-all duration-500 transform"
-      :class="store.isOpen ? 'rotate-90' : 'rotate-0'"
+      class="ai-chat-trigger"
       :title="store.isOpen ? 'Fechar assistente' : 'Assistente de IA'"
       aria-label="Abrir ou fechar assistente de IA"
+      :aria-expanded="store.isOpen"
     >
-      <!-- Efeito 3D + brilho interno -->
-      <span class="absolute inset-0 rounded-full bg-gradient-to-b from-white/30 to-transparent opacity-40"></span>
-      <span class="absolute inset-0 rounded-full border-2 border-white/10"></span>
-      <span class="relative z-10 text-brand-black">
-        <X v-if="store.isOpen" :size="26" />
-        <Bot v-else :size="28" />
+      <span class="ai-chat-trigger__center">
+        <X v-if="store.isOpen" :size="22" aria-hidden="true" />
+        <Bot v-else :size="22" aria-hidden="true" />
       </span>
     </button>
 
@@ -400,21 +397,65 @@ function onKeydown(e: KeyboardEvent) {
 </template>
 
 <style scoped>
-.ai-fab {
-  background: linear-gradient(135deg, rgba(255, 232, 77, 0.55) 0%, rgba(255, 214, 0, 0.45) 60%, rgba(230, 192, 0, 0.4) 100%);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.2),
-    inset 0 1px 1px rgba(255, 255, 255, 0.4);
-  border: 1px solid rgba(255, 232, 77, 0.5);
+.ai-chat-trigger {
+  --size: 50px;
+  --shadow: calc(var(--size) * 0.07) calc(var(--size) * 0.1);
+  position: relative;
+  display: block;
+  width: var(--size);
+  height: var(--size);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background-color: #4158d0;
+  background-image: linear-gradient(
+    43deg,
+    #4158d0 0%,
+    #c850c0 46%,
+    #ffcc70 100%
+  );
+  box-shadow: 0 var(--shadow) #ffbeb8;
+  cursor: pointer;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
 }
-.ai-fab:hover {
-  transform: scale(1.1) rotate(5deg);
-  background: linear-gradient(135deg, rgba(255, 232, 77, 0.7) 0%, rgba(255, 214, 0, 0.6) 60%, rgba(230, 192, 0, 0.55) 100%);
-  box-shadow:
-    0 4px 14px rgba(0, 0, 0, 0.25),
-    inset 0 1px 1px rgba(255, 255, 255, 0.5);
+
+.ai-chat-trigger__center {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  display: flex;
+  width: calc(var(--size) * 0.7);
+  height: calc(var(--size) * 0.7);
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #4158d0;
+  background-color: #fff;
+  box-shadow: inset 0 var(--shadow) #ffbeb8;
+  transform: translate(-50%, -50%);
+  transition:
+    width 0.2s ease,
+    height 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.ai-chat-trigger:hover .ai-chat-trigger__center {
+  width: calc(var(--size) * 0.55);
+  height: calc(var(--size) * 0.55);
+  color: #c850c0;
+  box-shadow: inset 0 var(--shadow) #ff9d96;
+}
+
+.ai-chat-trigger:active {
+  transform: scale(0.9);
+}
+
+.ai-chat-trigger:focus-visible {
+  outline: 3px solid #4158d0;
+  outline-offset: 4px;
 }
 
 .ai-panel {
@@ -429,6 +470,13 @@ function onKeydown(e: KeyboardEvent) {
   100% {
     opacity: 1;
     transform: scale(1) translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-chat-trigger,
+  .ai-chat-trigger__center {
+    transition: none;
   }
 }
 </style>
