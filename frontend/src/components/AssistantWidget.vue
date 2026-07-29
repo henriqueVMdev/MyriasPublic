@@ -54,11 +54,13 @@ function onKeydown(e: KeyboardEvent) {
   <button
     v-if="!store.isOpen"
     @click="open"
-    class="fixed bottom-20 right-4 z-50 w-11 h-11 rounded-full flex items-center justify-center shadow-lg ring-1 ring-black/10 bg-indigo-600 text-white hover:bg-indigo-500 transition-colors"
+    class="ai-chat-trigger fixed bottom-20 right-4 z-50"
     title="Assistente de IA"
     aria-label="Abrir assistente de IA"
   >
-    <Bot :size="22" />
+    <span class="ai-chat-trigger__center">
+      <Bot :size="22" aria-hidden="true" />
+    </span>
   </button>
 
   <!-- Painel -->
@@ -168,3 +170,71 @@ function onKeydown(e: KeyboardEvent) {
     </div>
   </div>
 </template>
+
+<style scoped>
+.ai-chat-trigger {
+  --size: 50px;
+  --shadow: calc(var(--size) * 0.07) calc(var(--size) * 0.1);
+  width: var(--size);
+  height: var(--size);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background-color: #4158d0;
+  background-image: linear-gradient(
+    43deg,
+    #4158d0 0%,
+    #c850c0 46%,
+    #ffcc70 100%
+  );
+  box-shadow: 0 var(--shadow) #ffbeb8;
+  cursor: pointer;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ai-chat-trigger__center {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  display: flex;
+  width: calc(var(--size) * 0.7);
+  height: calc(var(--size) * 0.7);
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #4158d0;
+  background-color: #fff;
+  box-shadow: inset 0 var(--shadow) #ffbeb8;
+  transform: translate(-50%, -50%);
+  transition:
+    width 0.2s ease,
+    height 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.ai-chat-trigger:hover .ai-chat-trigger__center {
+  width: calc(var(--size) * 0.55);
+  height: calc(var(--size) * 0.55);
+  color: #c850c0;
+  box-shadow: inset 0 var(--shadow) #ff9d96;
+}
+
+.ai-chat-trigger:active {
+  transform: scale(0.9);
+}
+
+.ai-chat-trigger:focus-visible {
+  outline: 3px solid #4158d0;
+  outline-offset: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-chat-trigger,
+  .ai-chat-trigger__center {
+    transition: none;
+  }
+}
+</style>
