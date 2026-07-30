@@ -1,9 +1,9 @@
-package com.hrb.mlmanager.quality;
+package com.myrias.mlmanager.quality;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.hrb.mlmanager.auth.PanelSecurity;
-import com.hrb.mlmanager.meli.MeliAuthService;
+import com.myrias.mlmanager.auth.PanelSecurity;
+import com.myrias.mlmanager.meli.MeliAuthService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
 import java.util.Comparator;

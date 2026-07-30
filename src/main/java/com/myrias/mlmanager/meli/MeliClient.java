@@ -1,4 +1,4 @@
-package com.hrb.mlmanager.meli;
+package com.myrias.mlmanager.meli;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.annotation.PreDestroy;

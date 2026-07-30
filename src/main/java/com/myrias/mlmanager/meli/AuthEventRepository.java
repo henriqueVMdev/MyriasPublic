@@ -1,4 +1,4 @@
-package com.hrb.mlmanager.meli;
+package com.myrias.mlmanager.meli;
 
 import java.util.List;
 import org.springframework.data.domain.Pageable;

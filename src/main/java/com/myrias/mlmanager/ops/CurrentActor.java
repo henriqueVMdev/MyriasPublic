@@ -1,4 +1,4 @@
-package com.hrb.mlmanager.ops;
+package com.myrias.mlmanager.ops;
 
 /**
  * Ator (usuário humano) da requisição em curso, espelho do {@code ContextVar}

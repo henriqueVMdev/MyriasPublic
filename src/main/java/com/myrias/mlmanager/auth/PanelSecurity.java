@@ -1,6 +1,6 @@
-package com.hrb.mlmanager.auth;
+package com.myrias.mlmanager.auth;
 
-import com.hrb.mlmanager.ops.CurrentActor;
+import com.myrias.mlmanager.ops.CurrentActor;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;

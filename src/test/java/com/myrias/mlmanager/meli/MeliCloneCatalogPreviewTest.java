@@ -1,4 +1,4 @@
-package com.hrb.mlmanager.meli;
+package com.myrias.mlmanager.meli;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -7,8 +7,8 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.hrb.mlmanager.meli.MeliClient.MeliResponse;
-import com.hrb.mlmanager.ops.OperationLogRepository;
+import com.myrias.mlmanager.meli.MeliClient.MeliResponse;
+import com.myrias.mlmanager.ops.OperationLogRepository;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -32,7 +32,7 @@ class MeliCloneCatalogPreviewTest {
                 auth,
                 mock(MeliBulkService.class),
                 mock(OperationLogRepository.class),
-                mock(com.hrb.mlmanager.perf.MeliPerformanceService.class)
+                mock(com.myrias.mlmanager.perf.MeliPerformanceService.class)
         );
 
         try {
@@ -73,7 +73,7 @@ class MeliCloneCatalogPreviewTest {
                 auth,
                 mock(MeliBulkService.class),
                 mock(OperationLogRepository.class),
-                mock(com.hrb.mlmanager.perf.MeliPerformanceService.class)
+                mock(com.myrias.mlmanager.perf.MeliPerformanceService.class)
         );
 
         try {

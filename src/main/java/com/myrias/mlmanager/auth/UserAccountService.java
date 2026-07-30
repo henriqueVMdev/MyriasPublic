@@ -1,4 +1,4 @@
-package com.hrb.mlmanager.auth;
+package com.myrias.mlmanager.auth;
 
 import java.util.List;
 import org.springframework.security.crypto.password.PasswordEncoder;

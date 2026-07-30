@@ -1,6 +1,6 @@
-package com.hrb.mlmanager.ops;
+package com.myrias.mlmanager.ops;
 
-import com.hrb.mlmanager.auth.PanelSecurity;
+import com.myrias.mlmanager.auth.PanelSecurity;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
  * - lista/operations/by-item → seção {@code logs}
  * - atendimento → seção {@code atendimento_historico}
  * - actors/stats → qualquer sessão válida (sem chave específica)
- * A sessão do painel já é exigida pelo {@link com.hrb.mlmanager.auth.AppAuthFilter}.
+ * A sessão do painel já é exigida pelo {@link com.myrias.mlmanager.auth.AppAuthFilter}.
  */
 @RestController
 @RequestMapping("/api/logs")

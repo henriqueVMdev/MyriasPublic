@@ -1,7 +1,7 @@
-package com.hrb.mlmanager.competition;
+package com.myrias.mlmanager.competition;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.hrb.mlmanager.meli.MeliAuthService;
+import com.myrias.mlmanager.meli.MeliAuthService;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Coordena as varreduras de concorrência (manual + noturna). Versão enxuta do
- * {@link com.hrb.mlmanager.quality.QualityJobs}: só build de conta inteira, sem
+ * {@link com.myrias.mlmanager.quality.QualityJobs}: só build de conta inteira, sem
  * revalidação incremental por item (o detalhe ao vivo cobre isso sob demanda).
  * Pool de daemons + o mesmo rate limiter compartilhado do MeliClient.
  */

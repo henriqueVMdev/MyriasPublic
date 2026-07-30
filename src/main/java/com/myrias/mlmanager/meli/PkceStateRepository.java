@@ -1,4 +1,4 @@
-package com.hrb.mlmanager.meli;
+package com.myrias.mlmanager.meli;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 

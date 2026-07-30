@@ -1,4 +1,4 @@
-package com.hrb.mlmanager.ai;
+package com.myrias.mlmanager.ai;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import java.time.Duration;

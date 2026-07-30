@@ -1,4 +1,4 @@
-package com.hrb.mlmanager.auth;
+package com.myrias.mlmanager.auth;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;

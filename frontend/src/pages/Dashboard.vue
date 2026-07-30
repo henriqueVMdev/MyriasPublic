@@ -66,7 +66,7 @@ const SALES_RANGES: Array<{ days: number; label: string }> = [
 // ── Seleção de contas exibidas no dashboard ──────────────────────────────
 // Cada conta vira um card clicável no topo (bolinha verde = ativa/mostrando).
 // As infos (contagens, vendas, reputação) refletem só as contas selecionadas.
-const SELECTED_KEY = "hrb-dashboard-accounts";
+const SELECTED_KEY = "myrias-dashboard-accounts";
 const selectedAccounts = ref<Set<number>>(new Set());
 
 function loadSelected(allIds: number[]): Set<number> {

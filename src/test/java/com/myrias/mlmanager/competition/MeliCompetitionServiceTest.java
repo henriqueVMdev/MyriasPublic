@@ -1,4 +1,4 @@
-package com.hrb.mlmanager.competition;
+package com.myrias.mlmanager.competition;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;

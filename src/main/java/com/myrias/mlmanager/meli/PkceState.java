@@ -1,4 +1,4 @@
-package com.hrb.mlmanager.meli;
+package com.myrias.mlmanager.meli;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

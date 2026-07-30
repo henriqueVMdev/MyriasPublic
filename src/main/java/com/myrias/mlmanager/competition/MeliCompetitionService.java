@@ -1,13 +1,13 @@
-package com.hrb.mlmanager.competition;
+package com.myrias.mlmanager.competition;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.hrb.mlmanager.meli.MeliClient;
-import com.hrb.mlmanager.meli.MeliClient.MeliResponse;
-import com.hrb.mlmanager.perf.PerfSnapshot;
-import com.hrb.mlmanager.perf.PerfSnapshotRepository;
+import com.myrias.mlmanager.meli.MeliClient;
+import com.myrias.mlmanager.meli.MeliClient.MeliResponse;
+import com.myrias.mlmanager.perf.PerfSnapshot;
+import com.myrias.mlmanager.perf.PerfSnapshotRepository;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;

@@ -1,7 +1,7 @@
-package com.hrb.mlmanager.dashboard;
+package com.myrias.mlmanager.dashboard;
 
-import com.hrb.mlmanager.auth.PanelSecurity;
-import com.hrb.mlmanager.dashboard.DashboardService.Range;
+import com.myrias.mlmanager.auth.PanelSecurity;
+import com.myrias.mlmanager.dashboard.DashboardService.Range;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * Só {@code /revenue} exige a métrica {@code dashboard_revenue} (dado financeiro);
  * os demais precisam apenas de uma sessão válida do painel, garantida pelo
- * {@link com.hrb.mlmanager.auth.AppAuthFilter}. O endpoint /debug-performance do
+ * {@link com.myrias.mlmanager.auth.AppAuthFilter}. O endpoint /debug-performance do
  * Python era de diagnóstico e não é consumido pelo frontend — omitido.
  */
 @RestController

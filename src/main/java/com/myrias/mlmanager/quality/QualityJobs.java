@@ -1,7 +1,7 @@
-package com.hrb.mlmanager.quality;
+package com.myrias.mlmanager.quality;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.hrb.mlmanager.meli.MeliAuthService;
+import com.myrias.mlmanager.meli.MeliAuthService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -22,7 +22,7 @@ import org.springframework.stereotype.Component;
  *
  * O Python usava {@code asyncio.create_task} + prioridades no rate limiter; aqui
  * usamos um pool de threads dedicado e o mesmo limiter compartilhado do
- * {@link com.hrb.mlmanager.meli.MeliClient}. ponytail: sem tiers de prioridade —
+ * {@link com.myrias.mlmanager.meli.MeliClient}. ponytail: sem tiers de prioridade —
  * o semáforo do limiter serializa; reintroduzir prioridade só se a auditoria
  * atrapalhar requests interativas sob carga alta.
  */

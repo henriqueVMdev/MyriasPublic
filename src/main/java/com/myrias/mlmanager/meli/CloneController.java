@@ -1,9 +1,9 @@
-package com.hrb.mlmanager.meli;
+package com.myrias.mlmanager.meli;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.hrb.mlmanager.auth.PanelSecurity;
+import com.myrias.mlmanager.auth.PanelSecurity;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
 import java.util.List;

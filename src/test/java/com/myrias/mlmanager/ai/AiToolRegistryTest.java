@@ -1,4 +1,4 @@
-package com.hrb.mlmanager.ai;
+package com.myrias.mlmanager.ai;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -7,14 +7,14 @@ import static org.mockito.Mockito.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.hrb.mlmanager.auth.AppUser;
-import com.hrb.mlmanager.competition.MeliCompetitionService;
-import com.hrb.mlmanager.dashboard.DashboardService;
-import com.hrb.mlmanager.meli.MeliAuthService;
-import com.hrb.mlmanager.meli.MeliBulkService;
-import com.hrb.mlmanager.meli.MeliPromotionsService;
-import com.hrb.mlmanager.meli.MeliQuestionsService;
-import com.hrb.mlmanager.ops.OperationLogService;
+import com.myrias.mlmanager.auth.AppUser;
+import com.myrias.mlmanager.competition.MeliCompetitionService;
+import com.myrias.mlmanager.dashboard.DashboardService;
+import com.myrias.mlmanager.meli.MeliAuthService;
+import com.myrias.mlmanager.meli.MeliBulkService;
+import com.myrias.mlmanager.meli.MeliPromotionsService;
+import com.myrias.mlmanager.meli.MeliQuestionsService;
+import com.myrias.mlmanager.ops.OperationLogService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;

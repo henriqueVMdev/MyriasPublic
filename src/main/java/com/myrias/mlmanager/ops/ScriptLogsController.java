@@ -1,6 +1,6 @@
-package com.hrb.mlmanager.ops;
+package com.myrias.mlmanager.ops;
 
-import com.hrb.mlmanager.auth.PanelSecurity;
+import com.myrias.mlmanager.auth.PanelSecurity;
 import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.nio.file.Files;

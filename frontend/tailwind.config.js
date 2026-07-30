@@ -10,7 +10,7 @@ export default {
         mono: ["'JetBrains Mono'", "ui-monospace", "SFMono-Regular", "monospace"],
       },
       colors: {
-        // Paleta da marca HRB — preto e amarelo
+        // Paleta da marca Myrias — preto e amarelo
         brand: {
           yellow: "#FFD600",
           "yellow-dark": "#E6C000",

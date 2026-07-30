@@ -15,7 +15,7 @@ export interface ChatEntry {
   content: string;
 }
 
-const STORAGE_KEY = "hrb-assistant";
+const STORAGE_KEY = "myrias-assistant";
 
 function loadSaved(): { entries: ChatEntry[] } {
   try {

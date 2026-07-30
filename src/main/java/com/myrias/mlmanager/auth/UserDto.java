@@ -1,4 +1,4 @@
-package com.hrb.mlmanager.auth;
+package com.myrias.mlmanager.auth;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;

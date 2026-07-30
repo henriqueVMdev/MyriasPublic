@@ -1,15 +1,15 @@
-package com.hrb.mlmanager.perf;
+package com.myrias.mlmanager.perf;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.hrb.mlmanager.auth.PanelSecurity;
-import com.hrb.mlmanager.meli.MeliAuthService;
-import com.hrb.mlmanager.meli.MeliClient;
-import com.hrb.mlmanager.ops.OperationLog;
-import com.hrb.mlmanager.ops.OperationLogRepository;
-import com.hrb.mlmanager.perf.MeliPerformanceService.DeleteResult;
+import com.myrias.mlmanager.auth.PanelSecurity;
+import com.myrias.mlmanager.meli.MeliAuthService;
+import com.myrias.mlmanager.meli.MeliClient;
+import com.myrias.mlmanager.ops.OperationLog;
+import com.myrias.mlmanager.ops.OperationLogRepository;
+import com.myrias.mlmanager.perf.MeliPerformanceService.DeleteResult;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDate;
 import java.time.ZoneOffset;

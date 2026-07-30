@@ -1,11 +1,11 @@
-package com.hrb.mlmanager.ai;
+package com.myrias.mlmanager.ai;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.hrb.mlmanager.auth.AppUser;
-import com.hrb.mlmanager.meli.MeliAuthService;
+import com.myrias.mlmanager.auth.AppUser;
+import com.myrias.mlmanager.meli.MeliAuthService;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -171,7 +171,7 @@ public class AiAssistantService {
 
     private ObjectNode systemMessage() {
         StringBuilder sb = new StringBuilder();
-        sb.append("Você é o assistente do HRB ML Manager, painel de gestão de anúncios do ")
+        sb.append("Você é o assistente do Myrias ML Manager, painel de gestão de anúncios do ")
           .append("Mercado Livre com múltiplas contas. Hoje é ")
           .append(LocalDate.now(SAO_PAULO)).append(". ");
         List<Map<String, Object>> accounts;

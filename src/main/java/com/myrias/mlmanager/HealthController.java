@@ -1,4 +1,4 @@
-package com.hrb.mlmanager;
+package com.myrias.mlmanager;
 
 import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;

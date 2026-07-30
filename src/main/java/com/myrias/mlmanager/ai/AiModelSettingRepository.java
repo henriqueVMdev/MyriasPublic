@@ -1,4 +1,4 @@
-package com.hrb.mlmanager.ai;
+package com.myrias.mlmanager.ai;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 

@@ -1,9 +1,9 @@
-package com.hrb.mlmanager.dashboard;
+package com.myrias.mlmanager.dashboard;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.hrb.mlmanager.meli.MeliAuthService;
-import com.hrb.mlmanager.meli.MeliClient;
-import com.hrb.mlmanager.meli.MeliClient.MeliResponse;
+import com.myrias.mlmanager.meli.MeliAuthService;
+import com.myrias.mlmanager.meli.MeliClient;
+import com.myrias.mlmanager.meli.MeliClient.MeliResponse;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;

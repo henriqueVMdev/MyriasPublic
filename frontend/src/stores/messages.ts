@@ -3,7 +3,7 @@ import { ref, computed } from "vue";
 import { listUnread, type Conversation, type MessageAccount } from "@/api/messages";
 
 const POLL_INTERVAL_MS = 30_000;
-const SEEN_KEY = "hrb-messages-seen";
+const SEEN_KEY = "myrias-messages-seen";
 
 function loadSeen(): Set<string> {
   try {

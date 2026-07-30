@@ -1,7 +1,7 @@
-package com.hrb.mlmanager.meli;
+package com.myrias.mlmanager.meli;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.hrb.mlmanager.auth.PanelSecurity;
+import com.myrias.mlmanager.auth.PanelSecurity;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import org.springframework.http.HttpStatus;

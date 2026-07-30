@@ -1,7 +1,7 @@
-package com.hrb.mlmanager.config;
+package com.myrias.mlmanager.config;
 
-import com.hrb.mlmanager.auth.Permissions;
-import com.hrb.mlmanager.auth.UserAccountService;
+import com.myrias.mlmanager.auth.Permissions;
+import com.myrias.mlmanager.auth.UserAccountService;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;

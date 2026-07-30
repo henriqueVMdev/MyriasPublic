@@ -1,4 +1,4 @@
-package com.hrb.mlmanager.ops;
+package com.myrias.mlmanager.ops;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.persistence.criteria.Predicate;

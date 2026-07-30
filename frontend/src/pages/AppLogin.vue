@@ -70,12 +70,12 @@ async function login() {
       <div class="flex flex-col items-center mb-8">
         <img
           src="/logo_favicon.svg"
-          alt="HRB Imports"
+          alt="Myrias Imports"
           class="w-20 h-20 mb-4 drop-shadow dark:hidden"
         />
         <img
           src="/logo dourado 1.svg"
-          alt="HRB Imports"
+          alt="Myrias Imports"
           class="w-20 h-20 mb-4 drop-shadow hidden dark:block"
         />
         <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Painel de Gestão Interno</p>
@@ -153,16 +153,16 @@ async function login() {
       <!-- Footer -->
       <div class="mt-8 space-y-1 text-center">
         <p class="text-xs text-gray-500 dark:text-gray-400">
-          Sistema interno HRB Imports — acesso restrito a colaboradores.
+          Sistema interno Myrias Imports — acesso restrito a colaboradores.
         </p>
         <p class="text-xs text-gray-400 dark:text-gray-500">
           Dúvidas ou problemas de acesso:
-          <a href="mailto:assist88hrb@outlook.com" class="underline hover:text-gray-600 dark:hover:text-gray-300">
-            assist88hrb@outlook.com
+          <a href="mailto:assist88myrias@outlook.com" class="underline hover:text-gray-600 dark:hover:text-gray-300">
+            assist88myrias@outlook.com
           </a>
         </p>
         <p class="text-[11px] text-gray-400 dark:text-gray-500 pt-2">
-          &copy; {{ new Date().getFullYear() }} HRB Imports &middot;
+          &copy; {{ new Date().getFullYear() }} Myrias Imports &middot;
           <router-link to="/sobre" class="underline hover:text-gray-600 dark:hover:text-gray-300">
             Sobre
           </router-link>

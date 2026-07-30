@@ -2,9 +2,9 @@ spring:
   application:
     name: ml-manager
   datasource:
-    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/hrb_ml_manager}
-    username: ${DB_USER:hrb}
-    password: ${DB_PASSWORD:hrb_secret}
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/myrias_ml_manager}
+    username: ${DB_USER:myrias}
+    password: ${DB_PASSWORD:myrias_secret}
   jpa:
     hibernate:
       ddl-auto: update          # cria/atualiza as tabelas a partir das entidades

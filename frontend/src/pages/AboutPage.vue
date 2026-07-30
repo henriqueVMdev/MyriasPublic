@@ -8,17 +8,17 @@ const router = useRouter();
   <div class="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-brand-yellow via-brand-yellow-light to-white">
     <div class="max-w-2xl w-full bg-white rounded-2xl shadow-xl p-8 space-y-6">
       <header class="flex items-center gap-4 border-b pb-5">
-        <img src="/logo_favicon.svg" alt="HRB Imports" class="w-16 h-16 flex-shrink-0 dark:hidden" />
-        <img src="/logo dourado 1.svg" alt="HRB Imports" class="w-16 h-16 flex-shrink-0 hidden dark:block" />
+        <img src="/logo_favicon.svg" alt="Myrias Imports" class="w-16 h-16 flex-shrink-0 dark:hidden" />
+        <img src="/logo dourado 1.svg" alt="Myrias Imports" class="w-16 h-16 flex-shrink-0 hidden dark:block" />
         <div>
-          <h1 class="text-2xl font-bold text-gray-900">HRB Imports</h1>
+          <h1 class="text-2xl font-bold text-gray-900">Myrias Imports</h1>
           <p class="text-sm text-gray-500">Painel interno de gestão</p>
         </div>
       </header>
 
       <section class="space-y-3 text-gray-700 text-sm leading-relaxed">
         <p>
-          Este endereço hospeda o <strong>painel administrativo interno da HRB Imports</strong>,
+          Este endereço hospeda o <strong>painel administrativo interno da Myrias Imports</strong>,
           utilizado exclusivamente pelos colaboradores autorizados da empresa para
           tarefas operacionais de catálogo e atendimento.
         </p>
@@ -37,17 +37,17 @@ const router = useRouter();
         <h2 class="font-semibold text-gray-900">Contato</h2>
         <p class="text-gray-700">
           E-mail:
-          <a href="mailto:assist88hrb@outlook.com" class="text-meli-blue underline hover:no-underline">
-            assist88hrb@outlook.com
+          <a href="mailto:assist88myrias@outlook.com" class="text-meli-blue underline hover:no-underline">
+            assist88myrias@outlook.com
           </a>
         </p>
         <p class="text-gray-700">
-          Razão social: HRB Imports — uso interno
+          Razão social: Myrias Imports — uso interno
         </p>
       </section>
 
       <footer class="flex items-center justify-between pt-4 border-t text-xs text-gray-400">
-        <span>&copy; {{ new Date().getFullYear() }} HRB Imports</span>
+        <span>&copy; {{ new Date().getFullYear() }} Myrias Imports</span>
         <button
           type="button"
           @click="router.push('/login')"

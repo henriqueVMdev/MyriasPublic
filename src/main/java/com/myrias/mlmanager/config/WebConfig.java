@@ -1,4 +1,4 @@
-package com.hrb.mlmanager.config;
+package com.myrias.mlmanager.config;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;

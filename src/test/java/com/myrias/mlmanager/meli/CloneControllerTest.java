@@ -1,11 +1,11 @@
-package com.hrb.mlmanager.meli;
+package com.myrias.mlmanager.meli;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.hrb.mlmanager.auth.PanelSecurity;
+import com.myrias.mlmanager.auth.PanelSecurity;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;

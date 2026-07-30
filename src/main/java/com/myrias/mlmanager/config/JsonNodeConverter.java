@@ -1,4 +1,4 @@
-package com.hrb.mlmanager.config;
+package com.myrias.mlmanager.config;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

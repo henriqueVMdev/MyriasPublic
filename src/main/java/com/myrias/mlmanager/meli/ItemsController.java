@@ -1,10 +1,10 @@
-package com.hrb.mlmanager.meli;
+package com.myrias.mlmanager.meli;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.hrb.mlmanager.meli.MeliClient.MeliResponse;
-import com.hrb.mlmanager.meli.MeliItemsService.UpdateResult;
+import com.myrias.mlmanager.meli.MeliClient.MeliResponse;
+import com.myrias.mlmanager.meli.MeliItemsService.UpdateResult;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -26,7 +26,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Rotas de anúncios. Espelho de backend/app/api/items.py.
- * A sessão do painel já é exigida pelo {@link com.hrb.mlmanager.auth.AppAuthFilter};
+ * A sessão do painel já é exigida pelo {@link com.myrias.mlmanager.auth.AppAuthFilter};
  * a conta ML ativa vem de {@link MeliAuthService#requireActiveAccountId()}.
  */
 @RestController
@@ -44,10 +44,10 @@ public class ItemsController {
     private final MeliItemsService service;
     private final MeliClient client;
     private final MeliAuthService auth;
-    private final com.hrb.mlmanager.quality.QualityJobs quality;
+    private final com.myrias.mlmanager.quality.QualityJobs quality;
 
     public ItemsController(MeliItemsService service, MeliClient client, MeliAuthService auth,
-                           com.hrb.mlmanager.quality.QualityJobs quality) {
+                           com.myrias.mlmanager.quality.QualityJobs quality) {
         this.service = service;
         this.client = client;
         this.auth = auth;

@@ -1,4 +1,4 @@
-package com.hrb.mlmanager.ai;
+package com.myrias.mlmanager.ai;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -8,8 +8,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.hrb.mlmanager.auth.AppUser;
-import com.hrb.mlmanager.meli.MeliAuthService;
+import com.myrias.mlmanager.auth.AppUser;
+import com.myrias.mlmanager.meli.MeliAuthService;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;

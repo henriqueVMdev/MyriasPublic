@@ -3,7 +3,7 @@ import { ref, watch } from "vue";
 
 export type ThemeMode = "light" | "dark";
 
-const STORAGE_KEY = "hrb-theme";
+const STORAGE_KEY = "myrias-theme";
 
 function detectInitial(): ThemeMode {
   const saved = localStorage.getItem(STORAGE_KEY);

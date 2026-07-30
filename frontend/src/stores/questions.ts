@@ -3,9 +3,9 @@ import { ref, computed } from "vue";
 import { listQuestions, type Question, type QuestionAccount } from "@/api/questions";
 
 const POLL_INTERVAL_MS = 30_000;
-const SEEN_KEY = "hrb-questions-seen";
+const SEEN_KEY = "myrias-questions-seen";
 const SEEN_MAX = 500;
-const DISMISSED_KEY = "hrb-questions-dismissed";
+const DISMISSED_KEY = "myrias-questions-dismissed";
 const DISMISSED_MAX = 500;
 
 function loadSeen(): Set<number> {

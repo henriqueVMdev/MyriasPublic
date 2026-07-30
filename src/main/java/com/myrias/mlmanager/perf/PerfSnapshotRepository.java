@@ -1,4 +1,4 @@
-package com.hrb.mlmanager.perf;
+package com.myrias.mlmanager.perf;
 
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;

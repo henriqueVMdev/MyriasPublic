@@ -1,6 +1,6 @@
-package com.hrb.mlmanager.meli;
+package com.myrias.mlmanager.meli;
 
-import com.hrb.mlmanager.auth.PanelSecurity;
+import com.myrias.mlmanager.auth.PanelSecurity;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URI;
 import java.net.URLEncoder;

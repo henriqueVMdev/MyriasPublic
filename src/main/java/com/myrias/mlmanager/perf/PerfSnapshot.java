@@ -1,7 +1,7 @@
-package com.hrb.mlmanager.perf;
+package com.myrias.mlmanager.perf;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.hrb.mlmanager.config.JsonNodeConverter;
+import com.myrias.mlmanager.config.JsonNodeConverter;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;

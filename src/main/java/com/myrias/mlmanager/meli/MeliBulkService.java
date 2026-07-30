@@ -1,12 +1,12 @@
-package com.hrb.mlmanager.meli;
+package com.myrias.mlmanager.meli;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.hrb.mlmanager.meli.MeliClient.MeliResponse;
-import com.hrb.mlmanager.ops.OperationLog;
-import com.hrb.mlmanager.ops.OperationLogRepository;
+import com.myrias.mlmanager.meli.MeliClient.MeliResponse;
+import com.myrias.mlmanager.ops.OperationLog;
+import com.myrias.mlmanager.ops.OperationLogRepository;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;

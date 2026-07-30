@@ -1,4 +1,4 @@
-package com.hrb.mlmanager.ai;
+package com.myrias.mlmanager.ai;
 
 import jakarta.annotation.PostConstruct;
 import java.math.BigDecimal;

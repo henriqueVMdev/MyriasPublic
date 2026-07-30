@@ -1,6 +1,6 @@
-package com.hrb.mlmanager.ai;
+package com.myrias.mlmanager.ai;
 
-import com.hrb.mlmanager.config.StringListJsonConverter;
+import com.myrias.mlmanager.config.StringListJsonConverter;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;

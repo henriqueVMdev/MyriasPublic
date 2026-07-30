@@ -209,7 +209,7 @@ As funcionalidades do Mercado Livre exigem uma conta conectada via OAuth
 ## Estrutura
 
 ```
-src/main/java/com/hrb/mlmanager/
+src/main/java/com/myrias/mlmanager/
   auth/         sessão assinada, usuários, permissões
   meli/         cliente da API do ML, OAuth, anúncios, bulk, clone, promoções, mensagens
   ai/           agente, catálogo de ferramentas, teto de gasto, auditoria

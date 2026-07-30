@@ -1,4 +1,4 @@
-package com.hrb.mlmanager.perf;
+package com.myrias.mlmanager.perf;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;

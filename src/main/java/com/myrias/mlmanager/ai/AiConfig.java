@@ -1,4 +1,4 @@
-package com.hrb.mlmanager.ai;
+package com.myrias.mlmanager.ai;
 
 import java.time.Duration;
 import org.springframework.beans.factory.annotation.Value;

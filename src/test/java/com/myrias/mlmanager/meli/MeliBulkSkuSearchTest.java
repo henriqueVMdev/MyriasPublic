@@ -1,11 +1,11 @@
-package com.hrb.mlmanager.meli;
+package com.myrias.mlmanager.meli;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.hrb.mlmanager.ops.OperationLogRepository;
+import com.myrias.mlmanager.ops.OperationLogRepository;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 

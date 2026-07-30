@@ -1,4 +1,4 @@
-package com.hrb.mlmanager.ai;
+package com.myrias.mlmanager.ai;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -6,8 +6,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.hrb.mlmanager.auth.AppUser;
-import com.hrb.mlmanager.auth.PanelSecurity;
+import com.myrias.mlmanager.auth.AppUser;
+import com.myrias.mlmanager.auth.PanelSecurity;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;

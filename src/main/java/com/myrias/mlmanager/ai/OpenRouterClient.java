@@ -1,4 +1,4 @@
-package com.hrb.mlmanager.ai;
+package com.myrias.mlmanager.ai;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -231,8 +231,8 @@ public class OpenRouterClient {
         try {
             resp = http.post().uri("/chat/completions")
                     .header("Authorization", "Bearer " + apiKey)
-                    .header("HTTP-Referer", "https://github.com/hrb/ml-manager")
-                    .header("X-Title", "HRB ML Manager")
+                    .header("HTTP-Referer", "https://github.com/myrias/ml-manager")
+                    .header("X-Title", "Myrias ML Manager")
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(payload)
                     .exchange((req, res) -> new Result(res.getStatusCode().value(), readJson(res)), false);

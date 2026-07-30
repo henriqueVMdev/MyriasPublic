@@ -13,7 +13,7 @@ const route = useRoute();
 const sidebarOpen = ref(false);
 
 // Colapso da sidebar no desktop — persistido entre sessões
-const COLLAPSE_KEY = "hrb-sidebar-collapsed";
+const COLLAPSE_KEY = "myrias-sidebar-collapsed";
 const collapsed = ref(localStorage.getItem(COLLAPSE_KEY) === "1");
 watch(collapsed, (v) => localStorage.setItem(COLLAPSE_KEY, v ? "1" : "0"));
 </script>
@@ -60,7 +60,7 @@ watch(collapsed, (v) => localStorage.setItem(COLLAPSE_KEY, v ? "1" : "0"));
           <img src="/logo_favicon.svg" alt="" class="w-6 h-6 dark:hidden" />
           <img src="/logo dourado 1.svg" alt="" class="w-6 h-6 hidden dark:block" />
           <h1 class="text-sm font-bold text-gray-900 dark:text-gray-100 truncate">
-            HRB ML Manager
+            Myrias ML Manager
           </h1>
         </div>
       </header>

@@ -1,8 +1,8 @@
-package com.hrb.mlmanager.ai;
+package com.myrias.mlmanager.ai;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.hrb.mlmanager.auth.AppUser;
-import com.hrb.mlmanager.auth.PanelSecurity;
+import com.myrias.mlmanager.auth.AppUser;
+import com.myrias.mlmanager.auth.PanelSecurity;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.LinkedHashMap;
 import java.util.List;

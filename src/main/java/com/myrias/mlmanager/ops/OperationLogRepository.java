@@ -1,4 +1,4 @@
-package com.hrb.mlmanager.ops;
+package com.myrias.mlmanager.ops;
 
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;

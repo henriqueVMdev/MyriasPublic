@@ -185,11 +185,11 @@ function onCancelDisconnect() {
       class="p-4 border-b border-black/10 dark:border-zinc-800 flex items-center gap-3"
       :class="collapsed ? 'lg:justify-center lg:px-2' : ''"
     >
-      <img src="/logo_favicon.svg" alt="HRB Imports" class="w-10 h-10 flex-shrink-0 dark:hidden" />
-      <img src="/logo dourado 1.svg" alt="HRB Imports" class="w-10 h-10 flex-shrink-0 hidden dark:block" />
+      <img src="/logo_favicon.svg" alt="Myrias Imports" class="w-10 h-10 flex-shrink-0 dark:hidden" />
+      <img src="/logo dourado 1.svg" alt="Myrias Imports" class="w-10 h-10 flex-shrink-0 hidden dark:block" />
       <div class="min-w-0" :class="hideCls">
         <h1 class="text-base font-extrabold tracking-tight text-brand-black dark:text-brand-yellow truncate">
-          HRB Imports
+          Myrias Imports
         </h1>
         <p class="text-[10px] font-semibold uppercase tracking-[0.22em] text-black/50 dark:text-gray-400">
           Painel interno
