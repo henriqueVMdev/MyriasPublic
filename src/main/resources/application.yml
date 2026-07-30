@@ -35,8 +35,13 @@ server:
 
 openrouter:                                              # Assistente de IA
   api-key: ${OPENROUTER_API_KEY:${env.OPENROUTER_API_KEY:}}
-  model: ${OPENROUTER_MODEL:${env.OPENROUTER_MODEL:anthropic/claude-sonnet-4.5}}
-  models: ${OPENROUTER_MODELS:${env.OPENROUTER_MODELS:anthropic/claude-sonnet-4.5,openai/gpt-4.1,google/gemini-2.5-pro}}
+  # Esta é a versão pública/demo do app: só modelos gratuitos podem ser
+  # selecionados. Desligar exige assumir a fatura — veja o teto em quota abaixo.
+  free-models-only: ${OPENROUTER_FREE_MODELS_ONLY:true}
+  model: ${OPENROUTER_MODEL:${env.OPENROUTER_MODEL:openai/gpt-oss-20b:free}}
+  # Só usada como fallback se o catálogo do OpenRouter estiver fora do ar; a lista
+  # real de seleção vem do catálogo, filtrada por gratuito + suporte a tools.
+  models: ${OPENROUTER_MODELS:${env.OPENROUTER_MODELS:openai/gpt-oss-20b:free,google/gemma-4-31b-it:free,nvidia/nemotron-3-super-120b-a12b:free}}
   max-tokens: ${OPENROUTER_MAX_TOKENS:1500}          # teto por resposta
   max-iterations: ${OPENROUTER_MAX_ITERATIONS:8}     # chamadas por comando (demo: 4)
   quota:                                             # bloqueia ANTES da chamada

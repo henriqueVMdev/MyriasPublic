@@ -24,7 +24,8 @@ class OpenRouterClientTest {
         RestClient.Builder builder = RestClient.builder().baseUrl("https://openrouter.ai/api/v1");
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         OpenRouterClient client = new OpenRouterClient(builder.build(), apiKey,
-                "anthropic/claude-sonnet-4.5", List.of("anthropic/claude-sonnet-4.5", "openai/gpt-4.1"));
+                "anthropic/claude-sonnet-4.5",
+                List.of("anthropic/claude-sonnet-4.5", "openai/gpt-4.1"), false);
         return new Fixture(client, server);
     }
 
@@ -134,5 +135,44 @@ class OpenRouterClientTest {
 
         assertTrue(models.stream().anyMatch(m -> m.id().equals("anthropic/claude-sonnet-4.5")));
         assertTrue(models.stream().anyMatch(m -> m.id().equals("openai/gpt-4.1")));
+    }
+
+    /**
+     * Versão pública/demo: nenhum modelo pago pode ser selecionado. Cobre as duas
+     * formas de "grátis" que o parseModel reconhece — sufixo `:free` e preço zero.
+     */
+    @Test
+    void soGratuitosFiltraModelosPagosDaSelecao() {
+        RestClient.Builder builder = RestClient.builder().baseUrl("https://openrouter.ai/api/v1");
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        OpenRouterClient client = new OpenRouterClient(builder.build(), "test-key",
+                "gratis/por-sufixo:free", List.of("gratis/por-sufixo:free"), true);
+
+        server.expect(requestTo(
+                        "https://openrouter.ai/api/v1/models?output_modalities=all&sort=most-popular"))
+                .andRespond(withSuccess("""
+                        {"data":[
+                          {"id":"pago/caro","name":"Pago",
+                           "pricing":{"prompt":"0.000003","completion":"0.000015","request":"0"},
+                           "supported_parameters":["tools"],
+                           "architecture":{"output_modalities":["text"]}},
+                          {"id":"gratis/por-sufixo:free","name":"Gratis Sufixo",
+                           "pricing":{"prompt":"0.000003","completion":"0","request":"0"},
+                           "supported_parameters":["tools"],
+                           "architecture":{"output_modalities":["text"]}},
+                          {"id":"gratis/por-preco","name":"Gratis Preco",
+                           "pricing":{"prompt":"0","completion":"0","request":"0"},
+                           "supported_parameters":["tools"],
+                           "architecture":{"output_modalities":["text"]}}
+                        ]}
+                        """, MediaType.APPLICATION_JSON));
+
+        List<String> ids = client.availableModels().stream()
+                .map(OpenRouterClient.ModelOption::id).toList();
+
+        assertEquals(List.of("gratis/por-sufixo:free", "gratis/por-preco"), ids);
+        // O pago segue visível no catálogo do admin — só não é selecionável.
+        assertTrue(client.allModels().stream().anyMatch(m -> m.id().equals("pago/caro")));
+        server.verify();
     }
 }

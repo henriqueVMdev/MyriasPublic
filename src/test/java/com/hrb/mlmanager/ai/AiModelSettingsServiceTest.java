@@ -60,4 +60,25 @@ class AiModelSettingsServiceTest {
         assertThrows(IllegalArgumentException.class, () -> service.updateModel("modelo/x"));
         verify(repository, never()).save(any());
     }
+
+    // O banco pode ter um modelo pago salvo de antes de a instalação virar
+    // "só gratuitos". Sem esta guarda a demo voltava a faturar sozinha.
+    @Test
+    void modeloPagoSalvoNoBancoNaoEhUsadoQuandoSoGratuitos() {
+        when(openRouter.freeModelsOnly()).thenReturn(true);
+        when(repository.findById(AiModelSetting.SINGLETON_ID))
+                .thenReturn(Optional.of(new AiModelSetting("anthropic/claude-sonnet-4.5")));
+
+        assertEquals("modelo/a", service.currentModel());
+    }
+
+    /** Com a flag desligada o modelo pago salvo continua valendo. */
+    @Test
+    void comFlagDesligadaModeloPagoSalvoEhRespeitado() {
+        when(openRouter.freeModelsOnly()).thenReturn(false);
+        when(repository.findById(AiModelSetting.SINGLETON_ID))
+                .thenReturn(Optional.of(new AiModelSetting("anthropic/claude-sonnet-4.5")));
+
+        assertEquals("anthropic/claude-sonnet-4.5", service.currentModel());
+    }
 }
