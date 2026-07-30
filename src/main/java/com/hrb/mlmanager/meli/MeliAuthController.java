@@ -35,20 +35,35 @@ public class MeliAuthController {
     private final MeliAuthService auth;
     private final PanelSecurity security;
     private final String frontendUrl;
+    private final boolean demoMode;
     private final SecureRandom random = new SecureRandom();
 
     public MeliAuthController(MeliAuthService auth, PanelSecurity security,
-                              @Value("${app.frontend-url:http://localhost:5173}") String frontendUrl) {
+                              @Value("${app.frontend-url:http://localhost:5173}") String frontendUrl,
+                              @Value("${app.demo-mode:false}") boolean demoMode) {
         this.auth = auth;
         this.security = security;
         this.frontendUrl = frontendUrl;
+        this.demoMode = demoMode;
     }
 
     public record AccountRef(Long user_id) {}
 
+    /**
+     * Estas duas rotas são GET e estão em OPEN_PATHS, então escapam do bloqueio
+     * de mutação do AppAuthFilter por dois motivos — precisam de guarda própria.
+     */
+    private void refuseInDemo() {
+        if (demoMode) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Modo demonstração: não é possível conectar contas do Mercado Livre.");
+        }
+    }
+
     /** Redireciona para a autorização do ML. */
     @GetMapping("/login")
     public ResponseEntity<Void> login() {
+        refuseInDemo();
         String state = randomState();
         String url = auth.getAuthUrl(state);
         return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(url)).build();
@@ -58,6 +73,7 @@ public class MeliAuthController {
     @GetMapping("/callback")
     public ResponseEntity<Void> callback(@RequestParam String code,
                                          @RequestParam(defaultValue = "") String state) {
+        refuseInDemo();
         try {
             auth.exchangeCode(code, state);
         } catch (Exception e) {

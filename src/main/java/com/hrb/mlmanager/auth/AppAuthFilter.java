@@ -9,6 +9,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.Map;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
 import org.springframework.stereotype.Component;
@@ -34,15 +35,26 @@ public class AppAuthFilter extends OncePerRequestFilter {
             "/api/auth/callback"
     );
 
+    private static final Set<String> SAFE_METHODS = Set.of("GET", "HEAD", "OPTIONS");
+
+    /** POSTs que são leitura/sessão e precisam continuar funcionando na demo. */
+    private static final Set<String> DEMO_ALLOWED_WRITES = Set.of(
+            "/api/ai/chat",       // é POST mas não escreve — sem isso a demo não funciona
+            "/api/app/login",
+            "/api/app/logout");
+
     private final SessionTokenService tokens;
     private final UserAccountService users;
     private final boolean devProfile;
+    private final boolean demoMode;
     private final ObjectMapper mapper = new ObjectMapper();
 
-    public AppAuthFilter(SessionTokenService tokens, UserAccountService users, Environment env) {
+    public AppAuthFilter(SessionTokenService tokens, UserAccountService users, Environment env,
+                         @Value("${app.demo-mode:false}") boolean demoMode) {
         this.tokens = tokens;
         this.users = users;
         this.devProfile = env.acceptsProfiles(Profiles.of("dev"));
+        this.demoMode = demoMode;
     }
 
     @Override
@@ -53,6 +65,17 @@ public class AppAuthFilter extends OncePerRequestFilter {
             // Rotas abertas e tudo fora de /api/ passam direto.
             if (OPEN_PATHS.contains(path) || !path.startsWith("/api/")) {
                 chain.doFilter(request, response);
+                return;
+            }
+
+            // Demo: barra qualquer mutação num só lugar. São ~48 handlers de
+            // escrita em 16 controllers — guardar cada um seria esquecer algum.
+            if (demoMode && !SAFE_METHODS.contains(request.getMethod())
+                    && !DEMO_ALLOWED_WRITES.contains(path)) {
+                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                response.setContentType("application/json");
+                mapper.writeValue(response.getWriter(),
+                        Map.of("detail", "Modo demonstração: alterações estão desabilitadas."));
                 return;
             }
 

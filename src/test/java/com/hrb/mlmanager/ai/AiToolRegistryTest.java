@@ -20,6 +20,8 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 class AiToolRegistryTest {
 
@@ -43,7 +45,12 @@ class AiToolRegistryTest {
         promotions = mock(MeliPromotionsService.class);
         logs = mock(OperationLogService.class);
         competition = mock(MeliCompetitionService.class);
-        registry = new AiToolRegistry(auth, dashboard, bulk, questions, promotions, logs, competition);
+        registry = registryWithDemo(false);
+    }
+
+    private AiToolRegistry registryWithDemo(boolean demoMode) {
+        return new AiToolRegistry(auth, dashboard, bulk, questions, promotions, logs,
+                competition, demoMode);
     }
 
     private static AppUser userWith(boolean admin, String... perms) {
@@ -350,5 +357,30 @@ class AiToolRegistryTest {
                 () -> registry.writePermission("get_dashboard_revenue"));
         assertThrows(IllegalArgumentException.class,
                 () -> registry.writePermission("list_skus"));
+    }
+
+    // Demo: o modelo não pode nem VER as tools de escrita, senão propõe uma
+    // alteração e o usuário recebe um card de confirmação que depois falha.
+    @Test
+    void demoNaoOferecemToolsDeEscritaNemPraAdmin() {
+        AiToolRegistry demo = registryWithDemo(true);
+        List<String> nomes = toolNames(demo.toolDefinitions(userWith(true)));
+        assertFalse(nomes.isEmpty(), "as tools de leitura devem continuar");
+        for (String write : AiToolRegistry.WRITE_TOOLS) {
+            assertFalse(nomes.contains(write), write + " não deveria ser oferecida na demo");
+        }
+        // Fora da demo o admin continua vendo tudo.
+        assertTrue(toolNames(registry.toolDefinitions(userWith(true)))
+                .containsAll(AiToolRegistry.WRITE_TOOLS));
+    }
+
+    // Guarda de raiz: mesmo que algo chegue ao executeWrite, na demo não executa.
+    @Test
+    void demoRecusaExecuteWrite() {
+        AiToolRegistry demo = registryWithDemo(true);
+        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+                () -> demo.executeWrite("bulk_update_items", MAPPER.createObjectNode()));
+        assertEquals(HttpStatus.FORBIDDEN, e.getStatusCode());
+        verifyNoInteractions(bulk, promotions);
     }
 }

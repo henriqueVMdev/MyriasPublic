@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
 import org.springframework.http.HttpHeaders;
@@ -31,15 +32,18 @@ public class AuthController {
     private final UserAccountService users;
     private final SessionTokenService tokens;
     private final boolean devProfile;
+    private final boolean demoMode;
 
     // ip -> timestamps de tentativas falhas. ponytail: in-memory, serve pra
     // 1 instância; se escalar pra várias réplicas, trocar por Redis.
     private final Map<String, List<Long>> loginAttempts = new ConcurrentHashMap<>();
 
-    public AuthController(UserAccountService users, SessionTokenService tokens, Environment env) {
+    public AuthController(UserAccountService users, SessionTokenService tokens, Environment env,
+                          @Value("${app.demo-mode:false}") boolean demoMode) {
         this.users = users;
         this.tokens = tokens;
         this.devProfile = env.acceptsProfiles(Profiles.of("dev"));
+        this.demoMode = demoMode;
     }
 
     public record LoginBody(String username, String password) {}
@@ -73,23 +77,27 @@ public class AuthController {
 
     @GetMapping("/session")
     public Map<String, Object> session(HttpServletRequest request) {
+        // demo_mode vai nos três caminhos: é por aqui que o SPA descobre que
+        // precisa mostrar o banner e desabilitar os botões de escrita.
+        Map<String, Object> out = new java.util.HashMap<>();
+        out.put("demo_mode", demoMode);
         Long userId = tokens.verify(readCookie(request)).orElse(null);
         if (userId != null) {
             AppUser user = users.getById(userId);
             if (user != null && user.isActive()) {
-                return Map.of("authenticated", true, "user", UserDto.of(user));
+                out.put("authenticated", true);
+                out.put("user", UserDto.of(user));
+                return out;
             }
         }
         // Bootstrap: sem usuários ainda → painel liberado até criar o admin.
         // Só no dev, espelhando o AppAuthFilter: em prod o admin já existe.
         if (devProfile && users.count() == 0) {
-            Map<String, Object> out = new java.util.HashMap<>();
             out.put("authenticated", true);
             out.put("password_required", false);
             out.put("user", null);
             return out;
         }
-        Map<String, Object> out = new java.util.HashMap<>();
         out.put("authenticated", false);
         out.put("user", null);
         return out;

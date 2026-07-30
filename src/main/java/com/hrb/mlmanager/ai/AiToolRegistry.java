@@ -15,7 +15,10 @@ import com.hrb.mlmanager.ops.OperationLogService;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Catálogo de tools do assistente: schemas (formato OpenAI) + dispatch para os
@@ -52,10 +55,12 @@ public class AiToolRegistry {
     private final MeliPromotionsService promotions;
     private final OperationLogService logs;
     private final MeliCompetitionService competition;
+    private final boolean demoMode;
 
     public AiToolRegistry(MeliAuthService auth, DashboardService dashboard, MeliBulkService bulk,
                           MeliQuestionsService questions, MeliPromotionsService promotions,
-                          OperationLogService logs, MeliCompetitionService competition) {
+                          OperationLogService logs, MeliCompetitionService competition,
+                          @Value("${app.demo-mode:false}") boolean demoMode) {
         this.auth = auth;
         this.dashboard = dashboard;
         this.bulk = bulk;
@@ -63,6 +68,7 @@ public class AiToolRegistry {
         this.promotions = promotions;
         this.logs = logs;
         this.competition = competition;
+        this.demoMode = demoMode;
     }
 
     public boolean isWriteTool(String name) { return WRITE_TOOLS.contains(name); }
@@ -72,6 +78,9 @@ public class AiToolRegistry {
         ArrayNode out = MAPPER.createArrayNode();
         for (JsonNode tool : TOOL_DEFINITIONS) {
             String name = tool.path("function").path("name").asText();
+            // Na demo o modelo nem enxerga as tools de escrita: assim ele não as
+            // propõe e o usuário não recebe card de confirmação que depois falha.
+            if (demoMode && isWriteTool(name)) continue;
             String required = TOOL_PERMISSION.get(name);
             if (required == null || user.isAdmin() || user.getPermissions().contains(required)) {
                 out.add(tool);
@@ -190,6 +199,13 @@ public class AiToolRegistry {
 
     /** Executa a escrita — chamado SÓ pelo confirm do AiController. */
     public Map<String, Object> executeWrite(String name, JsonNode args) {
+        // Guarda de raiz: toolDefinitions já não oferece escrita na demo, mas este
+        // é o ponto por onde TODA escrita do agente passa. Um chamador futuro não
+        // reabre o buraco por esquecimento.
+        if (demoMode) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Modo demonstração: alterações estão desabilitadas.");
+        }
         return switch (name) {
             case "bulk_update_items" -> bulk.bulkUpdateMultiAccount(
                     parseGroups(args.path("groups")),

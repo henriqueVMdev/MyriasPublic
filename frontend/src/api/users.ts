@@ -19,6 +19,8 @@ export interface PublicUser {
 export interface SessionInfo {
   authenticated: boolean;
   password_required?: boolean;
+  /** Deploy público de demonstração: escrita bloqueada no backend. */
+  demo_mode?: boolean;
   user: {
     id: number;
     username: string;
