@@ -9,6 +9,8 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.Map;
 import java.util.Set;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -34,11 +36,13 @@ public class AppAuthFilter extends OncePerRequestFilter {
 
     private final SessionTokenService tokens;
     private final UserAccountService users;
+    private final boolean devProfile;
     private final ObjectMapper mapper = new ObjectMapper();
 
-    public AppAuthFilter(SessionTokenService tokens, UserAccountService users) {
+    public AppAuthFilter(SessionTokenService tokens, UserAccountService users, Environment env) {
         this.tokens = tokens;
         this.users = users;
+        this.devProfile = env.acceptsProfiles(Profiles.of("dev"));
     }
 
     @Override
@@ -59,8 +63,11 @@ public class AppAuthFilter extends OncePerRequestFilter {
                 return;
             }
 
-            // Sem sessão válida: libera só enquanto não existe nenhum usuário (bootstrap).
-            if (users.count() == 0) {
+            // Bootstrap (banco sem nenhum usuário) libera TODO /api/* sem sessão —
+            // inclusive POST /api/users e /api/ai/chat. Num deploy público isso é o
+            // suficiente pra um estranho virar admin, então vale só no dev; em prod
+            // o primeiro admin é criado por script/seeder antes de subir.
+            if (devProfile && users.count() == 0) {
                 chain.doFilter(request, response);
                 return;
             }

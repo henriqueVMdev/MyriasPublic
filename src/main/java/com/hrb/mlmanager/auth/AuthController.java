@@ -6,6 +6,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
@@ -28,14 +30,16 @@ public class AuthController {
 
     private final UserAccountService users;
     private final SessionTokenService tokens;
+    private final boolean devProfile;
 
     // ip -> timestamps de tentativas falhas. ponytail: in-memory, serve pra
     // 1 instância; se escalar pra várias réplicas, trocar por Redis.
     private final Map<String, List<Long>> loginAttempts = new ConcurrentHashMap<>();
 
-    public AuthController(UserAccountService users, SessionTokenService tokens) {
+    public AuthController(UserAccountService users, SessionTokenService tokens, Environment env) {
         this.users = users;
         this.tokens = tokens;
+        this.devProfile = env.acceptsProfiles(Profiles.of("dev"));
     }
 
     public record LoginBody(String username, String password) {}
@@ -55,7 +59,7 @@ public class AuthController {
                     .secure(request.isSecure())
                     .sameSite("Lax")
                     .path("/")
-                    .maxAge(Duration.ofDays(365))
+                    .maxAge(Duration.ofDays(30))   // casa com o TTL do SessionTokenService
                     .build();
             return ResponseEntity.ok()
                     .header(HttpHeaders.SET_COOKIE, cookie.toString())
@@ -77,7 +81,8 @@ public class AuthController {
             }
         }
         // Bootstrap: sem usuários ainda → painel liberado até criar o admin.
-        if (users.count() == 0) {
+        // Só no dev, espelhando o AppAuthFilter: em prod o admin já existe.
+        if (devProfile && users.count() == 0) {
             Map<String, Object> out = new java.util.HashMap<>();
             out.put("authenticated", true);
             out.put("password_required", false);
