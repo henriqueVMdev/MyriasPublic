@@ -17,4 +17,7 @@ frontend/tsconfig.tsbuildinfo
 docs/superpowers/plans/
 docs/superpowers/specs/
 .claude
+
+# Anotações internas não vão pro repo público; só o README é publicado.
 *.md
+!README.md
