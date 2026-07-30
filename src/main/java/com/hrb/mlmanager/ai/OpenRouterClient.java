@@ -27,23 +27,28 @@ public class OpenRouterClient {
     private final String apiKey;
     private final String defaultModel;
     private final List<String> models;
+    private final boolean freeModelsOnly;
     private volatile List<ModelInfo> catalogCache = List.of();
     private volatile Instant catalogCacheAt = Instant.EPOCH;
 
     public OpenRouterClient(RestClient openRouterRestClient,
                             @Value("${openrouter.api-key:}") String apiKey,
                             @Value("${openrouter.model}") String defaultModel,
-                            @Value("${openrouter.models}") List<String> models) {
+                            @Value("${openrouter.models}") List<String> models,
+                            @Value("${openrouter.free-models-only:true}") boolean freeModelsOnly) {
         this.http = openRouterRestClient;
         // Aspas e espaços vindos de .env/terminal quebrariam o Bearer com 401.
         this.apiKey = apiKey == null ? "" : apiKey.strip().replaceAll("^[\"']+|[\"']+$", "");
         this.defaultModel = defaultModel;
         this.models = List.copyOf(models);
+        this.freeModelsOnly = freeModelsOnly;
     }
 
     public String defaultModel() { return defaultModel; }
 
     public List<String> models() { return models; }
+
+    public boolean freeModelsOnly() { return freeModelsOnly; }
 
     public record ModelOption(String id, String name) {}
 
@@ -66,13 +71,16 @@ public class OpenRouterClient {
             boolean toolCompatible) {}
 
     /**
-     * Modelos utilizáveis pelo agente atual, que depende de function calling.
+     * Modelos selecionáveis: precisam de function calling (o agente depende) e,
+     * com {@code openrouter.free-models-only}, precisam ser gratuitos — esta é a
+     * versão pública/demo do app, então nenhum modelo pago entra na lista.
      * O painel administrativo usa {@link #allModels()} para mostrar o catálogo
      * completo, inclusive modelos incompatíveis.
      */
     public List<ModelOption> availableModels() {
         return allModels().stream()
                 .filter(ModelInfo::toolCompatible)
+                .filter(model -> !freeModelsOnly || model.free())
                 .map(model -> new ModelOption(model.id(), model.name()))
                 .toList();
     }
