@@ -57,8 +57,8 @@ watch(collapsed, (v) => localStorage.setItem(COLLAPSE_KEY, v ? "1" : "0"));
           <Menu :size="22" />
         </button>
         <div class="flex items-center gap-2 min-w-0">
-          <img src="/logo_favicon.svg" alt="" class="w-6 h-6 dark:hidden" />
-          <img src="/logo dourado 1.svg" alt="" class="w-6 h-6 hidden dark:block" />
+          <img src="/MyriasDarkLogo.png" alt="" class="h-6 w-auto dark:hidden" />
+          <img src="/MyriasYellowLogo.png" alt="" class="h-6 w-auto hidden dark:block" />
           <h1 class="text-sm font-bold text-gray-900 dark:text-gray-100 truncate">
             Myrias ML Manager
           </h1>
@@ -87,7 +87,7 @@ watch(collapsed, (v) => localStorage.setItem(COLLAPSE_KEY, v ? "1" : "0"));
          Claro → bola preta/lua branca (vai pro escuro). Escuro → bola branca/sol preto (vai pro claro). -->
     <button
       @click="theme.toggle()"
-      class="fixed bottom-4 right-4 z-50 w-11 h-11 rounded-full flex items-center justify-center shadow-lg ring-1 transition-colors"
+      class="fixed bottom-4 right-4 z-50 h-11 w-auto rounded-full flex items-center justify-center shadow-lg ring-1 transition-colors"
       :class="theme.mode === 'dark' ? 'bg-white text-black ring-black/10 hover:bg-gray-100' : 'bg-black text-white ring-white/15 hover:bg-zinc-800'"
       :title="theme.mode === 'dark' ? 'Mudar para tema claro' : 'Mudar para tema escuro'"
       aria-label="Alternar tema"

@@ -8,8 +8,8 @@ const router = useRouter();
   <div class="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-brand-yellow via-brand-yellow-light to-white">
     <div class="max-w-2xl w-full bg-white rounded-2xl shadow-xl p-8 space-y-6">
       <header class="flex items-center gap-4 border-b pb-5">
-        <img src="/logo_favicon.svg" alt="Myrias Imports" class="w-16 h-16 flex-shrink-0 dark:hidden" />
-        <img src="/logo dourado 1.svg" alt="Myrias Imports" class="w-16 h-16 flex-shrink-0 hidden dark:block" />
+        <img src="/MyriasDarkLogo.png" alt="Myrias Imports" class="h-16 w-auto flex-shrink-0 dark:hidden" />
+        <img src="/MyriasYellowLogo.png" alt="Myrias Imports" class="h-16 w-auto flex-shrink-0 hidden dark:block" />
         <div>
           <h1 class="text-2xl font-bold text-gray-900">Myrias Imports</h1>
           <p class="text-sm text-gray-500">Painel interno de gestão</p>

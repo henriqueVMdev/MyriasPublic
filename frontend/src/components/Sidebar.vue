@@ -170,7 +170,7 @@ function onCancelDisconnect() {
     <!-- Handle discreto na borda direita (só desktop): retrai / expande a sidebar -->
     <button
       @click="emit('toggle-collapse')"
-      class="hidden lg:flex absolute top-1/2 -translate-y-1/2 -right-3 z-50 w-6 h-6 items-center justify-center
+      class="hidden lg:flex absolute top-1/2 -translate-y-1/2 -right-3 z-50 h-6 w-auto items-center justify-center
              rounded-full border shadow-sm transition-colors
              bg-white text-gray-500 border-gray-200 hover:text-gray-800 hover:bg-gray-50
              dark:bg-zinc-800 dark:text-gray-400 dark:border-zinc-700 dark:hover:text-gray-100"
@@ -185,8 +185,8 @@ function onCancelDisconnect() {
       class="p-4 border-b border-black/10 dark:border-zinc-800 flex items-center gap-3"
       :class="collapsed ? 'lg:justify-center lg:px-2' : ''"
     >
-      <img src="/logo_favicon.svg" alt="Myrias Imports" class="w-10 h-10 flex-shrink-0 dark:hidden" />
-      <img src="/logo dourado 1.svg" alt="Myrias Imports" class="w-10 h-10 flex-shrink-0 hidden dark:block" />
+      <img src="/MyriasDarkLogo.png" alt="Myrias Imports" class="h-10 w-auto flex-shrink-0 dark:hidden" />
+      <img src="/MyriasYellowLogo.png" alt="Myrias Imports" class="h-10 w-auto flex-shrink-0 hidden dark:block" />
       <div class="min-w-0" :class="hideCls">
         <h1 class="text-base font-extrabold tracking-tight text-brand-black dark:text-brand-yellow truncate">
           Myrias Imports
@@ -242,7 +242,7 @@ function onCancelDisconnect() {
           <!-- Indicador compacto quando recolhida -->
           <span
             v-if="badgeCount(item.to) > 0 && collapsed"
-            class="hidden lg:block absolute top-1 right-1 w-2 h-2 rounded-full bg-red-500 ring-2 ring-brand-yellow dark:ring-brand-black-soft"
+            class="hidden lg:block absolute top-1 right-1 h-2 w-auto rounded-full bg-red-500 ring-2 ring-brand-yellow dark:ring-brand-black-soft"
           ></span>
         </router-link>
       </div>

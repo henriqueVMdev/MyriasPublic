@@ -69,14 +69,14 @@ async function login() {
       <!-- Company branding -->
       <div class="flex flex-col items-center mb-8">
         <img
-          src="/logo_favicon.svg"
+          src="/MyriasDarkLogo.png"
           alt="Myrias Imports"
-          class="w-20 h-20 mb-4 drop-shadow dark:hidden"
+          class="h-20 w-auto mb-4 drop-shadow dark:hidden"
         />
         <img
-          src="/logo dourado 1.svg"
+          src="/MyriasYellowLogo.png"
           alt="Myrias Imports"
-          class="w-20 h-20 mb-4 drop-shadow hidden dark:block"
+          class="h-20 w-auto mb-4 drop-shadow hidden dark:block"
         />
         <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Painel de Gestão Interno</p>
       </div>
