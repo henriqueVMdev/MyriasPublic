@@ -17,3 +17,4 @@ frontend/tsconfig.tsbuildinfo
 docs/superpowers/plans/
 docs/superpowers/specs/
 .claude
+*.md
