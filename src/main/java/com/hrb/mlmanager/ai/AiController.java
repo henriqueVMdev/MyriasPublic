@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -29,16 +30,19 @@ public class AiController {
     private final PanelSecurity security;
     private final AiModelSettingsService modelSettings;
     private final AiAuditService audit;
+    private final boolean demoMode;
 
     public AiController(AiAssistantService assistant, AiToolRegistry tools,
                         PendingActionStore pendingActions, PanelSecurity security,
-                        AiModelSettingsService modelSettings, AiAuditService audit) {
+                        AiModelSettingsService modelSettings, AiAuditService audit,
+                        @Value("${app.demo-mode:false}") boolean demoMode) {
         this.assistant = assistant;
         this.tools = tools;
         this.pendingActions = pendingActions;
         this.security = security;
         this.modelSettings = modelSettings;
         this.audit = audit;
+        this.demoMode = demoMode;
     }
 
     public record ModelUpdate(String model) {}
@@ -52,7 +56,7 @@ public class AiController {
                     "messages nao pode ser vazio");
         }
         try {
-            return assistant.chat(user, messages);
+            return assistant.chat(user, messages, quotaKey(user, request));
         } catch (OpenRouterException e) {
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("reply", "Assistente indisponível: " + e.getMessage());
@@ -61,6 +65,17 @@ public class AiController {
             out.put("error", true);
             return out;
         }
+    }
+
+    /**
+     * Balde do teto de gasto. Na demo o login é compartilhado, então contar por
+     * usuário colocaria todos os visitantes no mesmo balde e só o teto global
+     * protegeria — por IP cada visitante tem limite próprio.
+     */
+    private String quotaKey(AppUser user, HttpServletRequest request) {
+        if (!demoMode) return "user:" + user.getId();
+        String ip = request.getRemoteAddr();
+        return "ip:" + (ip == null ? "desconhecido" : ip);
     }
 
     @PostMapping("/actions/{id}/confirm")

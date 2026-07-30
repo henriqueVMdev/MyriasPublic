@@ -10,12 +10,15 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.hrb.mlmanager.auth.AppUser;
 import com.hrb.mlmanager.meli.MeliAuthService;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 class AiAssistantServiceTest {
 
@@ -28,6 +31,7 @@ class AiAssistantServiceTest {
     private MeliAuthService meliAuth;
     private AiCustomizationService customization;
     private AiAuditService audit;
+    private AiQuotaService quota;
     private AiAssistantService service;
     private AppUser user;
 
@@ -42,8 +46,9 @@ class AiAssistantServiceTest {
         when(customization.promptContext()).thenReturn("");
         // Auditoria real com repositório mockado: o Tracker é package-private.
         audit = new AiAuditService(mock(AiCommandLogRepository.class));
+        quota = mock(AiQuotaService.class);
         service = new AiAssistantService(openRouter, modelSettings, tools, pendingActions,
-                meliAuth, customization, audit, 1500, 8);
+                meliAuth, customization, audit, quota, 1500, 8);
 
         user = mock(AppUser.class);
         when(user.getId()).thenReturn(1L);
@@ -81,7 +86,7 @@ class AiAssistantServiceTest {
     @Test
     void respostaSemToolsVoltaDireto() {
         when(openRouter.chat(any())).thenReturn(FINAL_RESP);
-        Map<String, Object> out = service.chat(user, userMessages());
+        Map<String, Object> out = service.chat(user, userMessages(), "user:1");
         assertEquals("resposta final", out.get("reply"));
         assertNull(out.get("pending_action"));
     }
@@ -92,7 +97,7 @@ class AiAssistantServiceTest {
         when(tools.executeRead(eq("list_accounts"), any())).thenReturn("[]");
         when(openRouter.chat(any())).thenReturn(READ_TOOL_RESP, FINAL_RESP);
 
-        Map<String, Object> out = service.chat(user, userMessages());
+        Map<String, Object> out = service.chat(user, userMessages(), "user:1");
 
         assertEquals("resposta final", out.get("reply"));
         verify(tools).executeRead(eq("list_accounts"), any());
@@ -108,7 +113,7 @@ class AiAssistantServiceTest {
         when(tools.summarize(eq("bulk_update_items"), any())).thenReturn("Alterar 1 anúncio(s)");
         when(openRouter.chat(any())).thenReturn(WRITE_TOOL_RESP);
 
-        Map<String, Object> out = service.chat(user, userMessages());
+        Map<String, Object> out = service.chat(user, userMessages(), "user:1");
 
         assertEquals("Vou pausar o anúncio.", out.get("reply"));
         @SuppressWarnings("unchecked")
@@ -126,7 +131,7 @@ class AiAssistantServiceTest {
         when(tools.executeRead(eq("list_accounts"), any()))
                 .thenThrow(new IllegalStateException("ML fora do ar"));
         when(openRouter.chat(any())).thenReturn(READ_TOOL_RESP, FINAL_RESP);
-        Map<String, Object> out = service.chat(user, userMessages());
+        Map<String, Object> out = service.chat(user, userMessages(), "user:1");
         assertEquals("resposta final", out.get("reply"));
     }
 
@@ -135,7 +140,7 @@ class AiAssistantServiceTest {
         when(tools.isWriteTool("list_accounts")).thenReturn(false);
         when(tools.executeRead(eq("list_accounts"), any())).thenReturn("[]");
         when(openRouter.chat(any())).thenReturn(READ_TOOL_RESP);
-        Map<String, Object> out = service.chat(user, userMessages());
+        Map<String, Object> out = service.chat(user, userMessages(), "user:1");
         assertTrue(((String) out.get("reply")).contains("Não consegui concluir"));
         verify(openRouter, times(8)).chat(any());
     }
@@ -151,12 +156,47 @@ class AiAssistantServiceTest {
                 .thenThrow(new IllegalArgumentException("groups vazio ou inválido"));
         when(openRouter.chat(any())).thenReturn(WRITE_TOOL_RESP, FINAL_RESP);
 
-        Map<String, Object> out = service.chat(user, userMessages());
+        Map<String, Object> out = service.chat(user, userMessages(), "user:1");
 
         assertEquals("resposta final", out.get("reply"));
         assertNull(out.get("pending_action"));
         verify(openRouter, times(2)).chat(any());
         verify(tools, never()).executeWrite(any(), any());
+    }
+
+    // O ponto do teto de gasto: bloquear ANTES da chamada. Um teto que barra
+    // depois gasta exatamente o dinheiro que devia poupar.
+    @Test
+    void quotaEstouradaNaoChamaOpenRouter() {
+        doThrow(new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "estourou"))
+                .when(quota).require("user:1");
+
+        assertThrows(ResponseStatusException.class,
+                () -> service.chat(user, userMessages(), "user:1"));
+
+        verifyNoInteractions(openRouter);
+    }
+
+    // Cada iteração do loop debita na hora — senão as 8 voltas de um único
+    // comando passariam todas contra o mesmo saldo pré-comando.
+    @Test
+    void cadaIteracaoDebitaOCustoNoTeto() {
+        when(tools.isWriteTool("list_accounts")).thenReturn(false);
+        when(tools.executeRead(eq("list_accounts"), any())).thenReturn("[]");
+        when(openRouter.chat(any())).thenReturn(
+                withCost(READ_TOOL_RESP, "0.03"), withCost(FINAL_RESP, "0.02"));
+
+        service.chat(user, userMessages(), "user:1");
+
+        verify(quota).record("user:1", new BigDecimal("0.03"));
+        verify(quota).record("user:1", new BigDecimal("0.02"));
+        verify(quota).requireGlobal();   // só a partir da 2ª volta
+    }
+
+    private static JsonNode withCost(JsonNode base, String cost) {
+        ObjectNode copy = (ObjectNode) base.deepCopy();
+        copy.set("usage", MAPPER.createObjectNode().put("cost", cost));
+        return copy;
     }
 
     // O histórico vem do cliente: sem corte, quem chama a API escolhe quantos
@@ -171,7 +211,7 @@ class AiAssistantServiceTest {
         longa.add(MAPPER.createObjectNode().put("role", "user")
                 .put("content", "x".repeat(10_000)));
 
-        service.chat(user, longa);
+        service.chat(user, longa, "user:1");
 
         ArgumentCaptor<ObjectNode> payload = ArgumentCaptor.forClass(ObjectNode.class);
         verify(openRouter).chat(payload.capture());
@@ -192,7 +232,7 @@ class AiAssistantServiceTest {
         when(tools.toolDefinitions(user)).thenReturn(MAPPER.createArrayNode());
         when(openRouter.chat(any())).thenReturn(READ_TOOL_RESP, FINAL_RESP);
 
-        Map<String, Object> out = service.chat(user, userMessages());
+        Map<String, Object> out = service.chat(user, userMessages(), "user:1");
 
         assertEquals("resposta final", out.get("reply"));
         assertNull(out.get("pending_action"));

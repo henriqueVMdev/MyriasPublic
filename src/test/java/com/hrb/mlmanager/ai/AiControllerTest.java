@@ -47,7 +47,7 @@ class AiControllerTest {
 
         AiAuditService audit = new AiAuditService(mock(AiCommandLogRepository.class));
         mvc = MockMvcBuilders.standaloneSetup(
-                new AiController(assistant, tools, pendingActions, security, modelSettings, audit)).build();
+                new AiController(assistant, tools, pendingActions, security, modelSettings, audit, false)).build();
     }
 
     @Test
@@ -58,7 +58,7 @@ class AiControllerTest {
 
     @Test
     void chatDevolveRespostaDoService() throws Exception {
-        when(assistant.chat(eq(user), any()))
+        when(assistant.chat(eq(user), any(), any()))
                 .thenReturn(Map.of("reply", "oi", "tool_events", List.of()));
         mvc.perform(post("/api/ai/chat").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"messages\":[{\"role\":\"user\",\"content\":\"oi\"}]}"))
@@ -68,7 +68,7 @@ class AiControllerTest {
 
     @Test
     void erroDoOpenRouterVira200ComErrorTrue() throws Exception {
-        when(assistant.chat(eq(user), any()))
+        when(assistant.chat(eq(user), any(), any()))
                 .thenThrow(new OpenRouterException("Sem créditos"));
         mvc.perform(post("/api/ai/chat").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"messages\":[{\"role\":\"user\",\"content\":\"oi\"}]}"))
@@ -159,7 +159,7 @@ class AiControllerTest {
 
     @Test
     void modeloEnviadoManualmenteNoChatNaoEUsadoPeloController() throws Exception {
-        when(assistant.chat(eq(user), any()))
+        when(assistant.chat(eq(user), any(), any()))
                 .thenReturn(Map.of("reply", "oi", "tool_events", List.of()));
         mvc.perform(post("/api/ai/chat").contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -167,6 +167,6 @@ class AiControllerTest {
                                  "messages":[{"role":"user","content":"oi"}]}
                                 """))
                 .andExpect(status().isOk());
-        verify(assistant).chat(eq(user), any());
+        verify(assistant).chat(eq(user), any(), any());
     }
 }

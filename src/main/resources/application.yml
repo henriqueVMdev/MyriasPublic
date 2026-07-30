@@ -19,6 +19,9 @@ spring:
 app:
   secret-key: ${APP_SECRET_KEY:${env.APP_SECRET_KEY:dev-insecure-change-me}}   # assina os tokens de sessão
   frontend-url: ${FRONTEND_URL:${env.FRONTEND_URL:http://localhost:5173}}
+  # Deploy público de demonstração: bloqueia escrita e a conexão de contas do ML,
+  # e faz o teto de gasto da IA contar por IP em vez de por usuário.
+  demo-mode: ${APP_DEMO_MODE:${env.APP_DEMO_MODE:false}}
 
 meli:                                                    # OAuth + cliente Mercado Livre (Fatia 2)
   app-id: ${MELI_APP_ID:${env.MELI_APP_ID:}}
@@ -36,3 +39,7 @@ openrouter:                                              # Assistente de IA
   models: ${OPENROUTER_MODELS:${env.OPENROUTER_MODELS:anthropic/claude-sonnet-4.5,openai/gpt-4.1,google/gemini-2.5-pro}}
   max-tokens: ${OPENROUTER_MAX_TOKENS:1500}          # teto por resposta
   max-iterations: ${OPENROUTER_MAX_ITERATIONS:8}     # chamadas por comando (demo: 4)
+  quota:                                             # bloqueia ANTES da chamada
+    key-daily-requests: ${AI_KEY_DAILY_REQUESTS:20}  # por IP na demo, por usuário fora
+    key-daily-cost: ${AI_KEY_DAILY_COST:0.50}        # US$
+    global-daily-cost: ${AI_GLOBAL_DAILY_COST:5.00}  # US$ — o teto que protege a fatura

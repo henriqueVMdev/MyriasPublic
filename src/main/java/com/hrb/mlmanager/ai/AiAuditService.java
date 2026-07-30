@@ -146,6 +146,8 @@ public class AiAuditService {
         private long completionTokens;
         private long totalTokens;
         private BigDecimal cost = BigDecimal.ZERO;
+        /** Custo só da última resposta — o teto de gasto soma iteração por iteração. */
+        private BigDecimal lastCost = BigDecimal.ZERO;
         private int requestCount;
         private boolean finished;
 
@@ -167,11 +169,16 @@ public class AiAuditService {
             totalTokens += usage.path("total_tokens").asLong(0);
             String rawCost = usage.path("cost").asText("0");
             try {
-                cost = cost.add(new BigDecimal(rawCost));
+                lastCost = new BigDecimal(rawCost);
+                cost = cost.add(lastCost);
             } catch (NumberFormatException ignored) {
                 // Resposta sem custo numérico: preserva o restante da auditoria.
+                lastCost = BigDecimal.ZERO;
             }
         }
+
+        /** Custo da última resposta capturada, pro AiQuotaService debitar na hora. */
+        public BigDecimal lastCost() { return lastCost; }
 
         public void success(String reply, List<String> toolEvents) {
             finish(reply, toolEvents, "success", null);

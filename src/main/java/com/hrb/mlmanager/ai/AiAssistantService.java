@@ -42,13 +42,14 @@ public class AiAssistantService {
     private final MeliAuthService meliAuth;
     private final AiCustomizationService customization;
     private final AiAuditService audit;
+    private final AiQuotaService quota;
     private final int maxTokens;
     private final int maxIterations;
 
     public AiAssistantService(OpenRouterClient openRouter, AiModelSettingsService modelSettings,
                               AiToolRegistry tools, PendingActionStore pendingActions,
                               MeliAuthService meliAuth, AiCustomizationService customization,
-                              AiAuditService audit,
+                              AiAuditService audit, AiQuotaService quota,
                               @Value("${openrouter.max-tokens:1500}") int maxTokens,
                               @Value("${openrouter.max-iterations:8}") int maxIterations) {
         this.openRouter = openRouter;
@@ -58,11 +59,18 @@ public class AiAssistantService {
         this.meliAuth = meliAuth;
         this.customization = customization;
         this.audit = audit;
+        this.quota = quota;
         this.maxTokens = maxTokens;
         this.maxIterations = maxIterations;
     }
 
-    public Map<String, Object> chat(AppUser user, JsonNode clientMessages) {
+    /**
+     * @param quotaKey balde do teto de gasto — IP na demo, usuário fora dela
+     *                 (resolvido no AiController, que é quem tem o request).
+     */
+    public Map<String, Object> chat(AppUser user, JsonNode clientMessages, String quotaKey) {
+        // Antes do audit.begin: request bloqueado não deve virar linha de auditoria.
+        quota.require(quotaKey);
         String model = modelSettings.currentModel();
         AiAuditService.Tracker tracker = audit.begin(user, lastUserCommand(clientMessages), model);
         try {
@@ -75,6 +83,9 @@ public class AiAssistantService {
             List<String> toolEvents = new ArrayList<>();
 
             for (int i = 0; i < maxIterations; i++) {
+                // O loop pode dar 8 voltas: sem re-checar, um único comando come o
+                // orçamento do dia inteiro.
+                if (i > 0) quota.requireGlobal();
                 ObjectNode payload = MAPPER.createObjectNode();
                 payload.put("model", model);
                 payload.put("user", String.valueOf(user.getId()));
@@ -89,6 +100,7 @@ public class AiAssistantService {
 
                 JsonNode response = openRouter.chat(payload);
                 tracker.capture(response);
+                quota.record(quotaKey, tracker.lastCost());
                 JsonNode message = response.path("choices").path(0).path("message");
                 JsonNode toolCalls = message.path("tool_calls");
                 if (!toolCalls.isArray() || toolCalls.isEmpty()) {
