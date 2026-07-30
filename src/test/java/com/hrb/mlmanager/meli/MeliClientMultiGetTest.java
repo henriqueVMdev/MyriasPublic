@@ -139,7 +139,7 @@ class MeliClientMultiGetTest {
         private final Map<String, Map<String, String>> individualParams = new ConcurrentHashMap<>();
 
         StubClient(MeliResponse multiResponse) {
-            super(mock(MeliAuthService.class), new MeliRateLimiterTest(60_000, 10), 1);
+            super(mock(MeliAuthService.class), new MeliRateLimiter(60_000, 10), 1);
             this.multiResponse = multiResponse;
         }
 

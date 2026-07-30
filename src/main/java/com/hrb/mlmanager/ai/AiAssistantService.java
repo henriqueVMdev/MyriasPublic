@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
@@ -27,8 +28,12 @@ public class AiAssistantService {
 
     private static final Logger log = LoggerFactory.getLogger(AiAssistantService.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final int MAX_ITERATIONS = 8;
     private static final ZoneId SAO_PAULO = ZoneId.of("America/Sao_Paulo");
+
+    /** Teto do histórico que o cliente pode mandar. Sem isso quem chama a API
+     *  escolhe quantos tokens de prompt nós pagamos — vezes o nº de iterações. */
+    private static final int MAX_CLIENT_MESSAGES = 20;   // ~10 turnos
+    private static final int MAX_MESSAGE_CHARS = 4000;   // ~1k tokens por mensagem
 
     private final OpenRouterClient openRouter;
     private final AiModelSettingsService modelSettings;
@@ -37,11 +42,15 @@ public class AiAssistantService {
     private final MeliAuthService meliAuth;
     private final AiCustomizationService customization;
     private final AiAuditService audit;
+    private final int maxTokens;
+    private final int maxIterations;
 
     public AiAssistantService(OpenRouterClient openRouter, AiModelSettingsService modelSettings,
                               AiToolRegistry tools, PendingActionStore pendingActions,
                               MeliAuthService meliAuth, AiCustomizationService customization,
-                              AiAuditService audit) {
+                              AiAuditService audit,
+                              @Value("${openrouter.max-tokens:1500}") int maxTokens,
+                              @Value("${openrouter.max-iterations:8}") int maxIterations) {
         this.openRouter = openRouter;
         this.modelSettings = modelSettings;
         this.tools = tools;
@@ -49,6 +58,8 @@ public class AiAssistantService {
         this.meliAuth = meliAuth;
         this.customization = customization;
         this.audit = audit;
+        this.maxTokens = maxTokens;
+        this.maxIterations = maxIterations;
     }
 
     public Map<String, Object> chat(AppUser user, JsonNode clientMessages) {
@@ -63,10 +74,14 @@ public class AiAssistantService {
             for (JsonNode def : toolDefs) offered.add(def.path("function").path("name").asText());
             List<String> toolEvents = new ArrayList<>();
 
-            for (int i = 0; i < MAX_ITERATIONS; i++) {
+            for (int i = 0; i < maxIterations; i++) {
                 ObjectNode payload = MAPPER.createObjectNode();
                 payload.put("model", model);
                 payload.put("user", String.valueOf(user.getId()));
+                // Teto do que uma única resposta pode custar. É um assistente de
+                // dados: resposta curta e determinística basta e sai mais barato.
+                payload.put("max_tokens", maxTokens);
+                payload.put("temperature", 0.2);
                 // Sem isso o OpenRouter não devolve usage.cost e a auditoria fica em $0.
                 payload.set("usage", MAPPER.createObjectNode().put("include", true));
                 payload.set("messages", messages);
@@ -133,7 +148,7 @@ public class AiAssistantService {
                 }
             }
             return completed(tracker,
-                    "Não consegui concluir em " + MAX_ITERATIONS
+                    "Não consegui concluir em " + maxIterations
                             + " passos. Tente uma pergunta mais específica.",
                     toolEvents, null);
         } catch (RuntimeException e) {
@@ -192,19 +207,30 @@ public class AiAssistantService {
         return done(reply, events, pendingAction);
     }
 
-    /** Só roles user/assistant com content texto — descarta o resto. */
+    /**
+     * Só roles user/assistant com content texto — descarta o resto. O histórico
+     * vem do cliente, então é entrada não confiável: cada mensagem é truncada em
+     * MAX_MESSAGE_CHARS e só as últimas MAX_CLIENT_MESSAGES entram. Espelha o
+     * MAX_RESULT_CHARS do AiToolRegistry, que já limita o outro lado.
+     */
     private static void copyClientMessages(JsonNode clientMessages, ArrayNode out) {
         if (clientMessages == null || !clientMessages.isArray()) return;
+        List<ObjectNode> valid = new ArrayList<>();
         for (JsonNode message : clientMessages) {
             String role = message.path("role").asText("");
             String content = message.path("content").asText("");
             if ((role.equals("user") || role.equals("assistant")) && !content.isBlank()) {
                 ObjectNode copy = MAPPER.createObjectNode();
                 copy.put("role", role);
-                copy.put("content", content);
-                out.add(copy);
+                copy.put("content", content.length() > MAX_MESSAGE_CHARS
+                        ? content.substring(0, MAX_MESSAGE_CHARS)
+                        : content);
+                valid.add(copy);
             }
         }
+        // A cauda é o contexto relevante; o começo da conversa é o que se descarta.
+        int from = Math.max(0, valid.size() - MAX_CLIENT_MESSAGES);
+        for (ObjectNode copy : valid.subList(from, valid.size())) out.add(copy);
     }
 
     private static String lastUserCommand(JsonNode clientMessages) {

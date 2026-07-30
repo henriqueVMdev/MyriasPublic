@@ -89,7 +89,7 @@ class MeliCloneCatalogPreviewTest {
 
     private static final class StubClient extends MeliClient {
         StubClient() {
-            super(mock(MeliAuthService.class), new MeliRateLimiterTest(60_000, 10), 1);
+            super(mock(MeliAuthService.class), new MeliRateLimiter(60_000, 10), 1);
         }
 
         @Override

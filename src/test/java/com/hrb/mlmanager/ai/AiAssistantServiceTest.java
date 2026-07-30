@@ -7,6 +7,7 @@ import static org.mockito.Mockito.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.hrb.mlmanager.auth.AppUser;
 import com.hrb.mlmanager.meli.MeliAuthService;
 import java.time.Duration;
@@ -14,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class AiAssistantServiceTest {
 
@@ -41,7 +43,7 @@ class AiAssistantServiceTest {
         // Auditoria real com repositório mockado: o Tracker é package-private.
         audit = new AiAuditService(mock(AiCommandLogRepository.class));
         service = new AiAssistantService(openRouter, modelSettings, tools, pendingActions,
-                meliAuth, customization, audit);
+                meliAuth, customization, audit, 1500, 8);
 
         user = mock(AppUser.class);
         when(user.getId()).thenReturn(1L);
@@ -155,6 +157,31 @@ class AiAssistantServiceTest {
         assertNull(out.get("pending_action"));
         verify(openRouter, times(2)).chat(any());
         verify(tools, never()).executeWrite(any(), any());
+    }
+
+    // O histórico vem do cliente: sem corte, quem chama a API escolhe quantos
+    // tokens de prompt nós pagamos. Confere que o payload sai limitado.
+    @Test
+    void historicoDoClienteEhCortadoNoPayload() {
+        when(openRouter.chat(any())).thenReturn(FINAL_RESP);
+        ArrayNode longa = MAPPER.createArrayNode();
+        for (int i = 0; i < 30; i++) {
+            longa.add(MAPPER.createObjectNode().put("role", "user").put("content", "msg " + i));
+        }
+        longa.add(MAPPER.createObjectNode().put("role", "user")
+                .put("content", "x".repeat(10_000)));
+
+        service.chat(user, longa);
+
+        ArgumentCaptor<ObjectNode> payload = ArgumentCaptor.forClass(ObjectNode.class);
+        verify(openRouter).chat(payload.capture());
+        JsonNode messages = payload.getValue().path("messages");
+        // 1 system + no máximo 20 do cliente.
+        assertEquals(21, messages.size());
+        // Manteve a cauda, não o começo.
+        assertEquals("x".repeat(4000), messages.get(20).path("content").asText());
+        assertEquals("msg 11", messages.get(1).path("content").asText());
+        assertEquals(1500, payload.getValue().path("max_tokens").asInt());
     }
 
     // Defesa: o modelo pode alucinar uma tool que não foi oferecida a este
