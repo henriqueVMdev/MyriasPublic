@@ -46,8 +46,6 @@ public class OpenRouterClient {
 
     public String defaultModel() { return defaultModel; }
 
-    public List<String> models() { return models; }
-
     public boolean freeModelsOnly() { return freeModelsOnly; }
 
     public record ModelOption(String id, String name) {}
@@ -56,17 +54,13 @@ public class OpenRouterClient {
             String id,
             String name,
             String description,
-            long created,
             int contextLength,
             Map<String, String> pricing,
             List<String> supportedParameters,
             List<String> inputModalities,
             List<String> outputModalities,
             String tokenizer,
-            String instructType,
             Integer maxCompletionTokens,
-            String knowledgeCutoff,
-            JsonNode defaultParameters,
             boolean free,
             boolean toolCompatible) {}
 
@@ -110,11 +104,6 @@ public class OpenRouterClient {
             catalogCacheAt = Instant.EPOCH;
         }
         return allModels();
-    }
-
-    /** Compatibilidade com chamadas antigas que aceitavam um modelo do cliente. */
-    public String resolveModel(String requested) {
-        return requested != null && models.contains(requested) ? requested : defaultModel;
     }
 
     private record Result(int status, JsonNode body) {}
@@ -170,37 +159,27 @@ public class OpenRouterClient {
                     && isZero(pricing.get("request")));
         boolean toolCompatible = supported.contains("tools") && outputs.contains("text");
 
-        JsonNode defaultParameters = model.path("default_parameters");
-        if (defaultParameters.isMissingNode() || defaultParameters.isNull()) {
-            defaultParameters = null;
-        } else {
-            defaultParameters = defaultParameters.deepCopy();
-        }
         JsonNode maxCompletion = model.path("top_provider").path("max_completion_tokens");
 
         return new ModelInfo(
                 id,
                 model.path("name").asText(id),
                 model.path("description").asText(""),
-                model.path("created").asLong(0),
                 model.path("context_length").asInt(0),
                 Map.copyOf(pricing),
                 List.copyOf(supported),
                 List.copyOf(inputs),
                 List.copyOf(outputs),
                 architecture.path("tokenizer").asText(""),
-                architecture.path("instruct_type").asText(""),
                 maxCompletion.isNumber() ? maxCompletion.asInt() : null,
-                model.path("knowledge_cutoff").asText(""),
-                defaultParameters,
                 free,
                 toolCompatible);
     }
 
     private static ModelInfo fallbackModel(String id) {
-        return new ModelInfo(id, id, "Modelo configurado localmente.", 0, 0,
+        return new ModelInfo(id, id, "Modelo configurado localmente.", 0,
                 Map.of(), List.of("tools"), List.of("text"), List.of("text"),
-                "", "", null, "", null, id.endsWith(":free"), true);
+                "", null, id.endsWith(":free"), true);
     }
 
     private static List<String> textList(JsonNode node) {

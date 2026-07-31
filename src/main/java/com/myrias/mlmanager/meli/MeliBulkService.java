@@ -1006,32 +1006,11 @@ public class MeliBulkService {
         List<Map<String, Object>> out = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         for (Map<String, Object> p : positions) {
-            PositionValue value = resolvePositionValue(p);
+            ItemPosition value = ItemPosition.resolve(p);
             if (value == null || !seen.add(value.id())) continue;
-            out.add(Map.of("value_id", value.id(), "value_name", value.name()));
+            out.add(value.asValue());
         }
         return out;
-    }
-
-    private record PositionValue(String id, String name) {}
-
-    private static PositionValue resolvePositionValue(Map<String, Object> p) {
-        String name = p.get("value_name") == null ? "" : String.valueOf(p.get("value_name"));
-        String key = name.toLowerCase(Locale.ROOT).strip();
-        String stem = key.replaceAll("[aeiou]$", "");
-        if (stem.endsWith("direit")) return new PositionValue("2262160", "Direita");
-        if (stem.endsWith("esquerd")) return new PositionValue("2262158", "Esquerda");
-        if (stem.endsWith("dianteir")) return new PositionValue("13701104", "Dianteira");
-        if (stem.endsWith("traseir")) return new PositionValue("13701105", "Traseira");
-
-        String valueId = p.get("value_id") == null ? "" : String.valueOf(p.get("value_id"));
-        return switch (valueId) {
-            case "2262160" -> new PositionValue("2262160", "Direita");
-            case "2262158" -> new PositionValue("2262158", "Esquerda");
-            case "13701104" -> new PositionValue("13701104", "Dianteira");
-            case "13701105" -> new PositionValue("13701105", "Traseira");
-            default -> null;
-        };
     }
 
     private static Map<String, Object> buildCompatPostEntry(String pid, Map<String, Object> info) {

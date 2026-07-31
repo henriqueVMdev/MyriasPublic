@@ -1,5 +1,6 @@
 package com.myrias.mlmanager.config;
 
+import java.util.stream.Stream;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,10 +20,19 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @EnableScheduling   // auditoria noturna de qualidade (QualityJobs)
 public class WebConfig implements WebMvcConfigurer {
 
-    private final String frontendUrl;
+    /** Atalhos de desenvolvimento: Vite local e o mesmo Vite aberto por IP da LAN
+     *  (testar no celular). Com allowCredentials(true) eles não têm o que fazer
+     *  no deploy público, então saem quando app.demo-mode está ligado. */
+    private static final String[] DEV_ORIGIN_PATTERNS = {
+            "http://localhost:5173", "http://192.168.*.*:5173", "http://10.*.*.*:5173"};
 
-    public WebConfig(@Value("${app.frontend-url}") String frontendUrl) {
+    private final String frontendUrl;
+    private final boolean demoMode;
+
+    public WebConfig(@Value("${app.frontend-url}") String frontendUrl,
+                     @Value("${app.demo-mode:false}") boolean demoMode) {
         this.frontendUrl = frontendUrl;
+        this.demoMode = demoMode;
     }
 
     @Bean
@@ -32,9 +42,13 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
+        String[] origins = demoMode
+                ? new String[] {frontendUrl}
+                : Stream.concat(Stream.of(frontendUrl), Stream.of(DEV_ORIGIN_PATTERNS))
+                        .toArray(String[]::new);
         registry.addMapping("/api/**")
-                // Patterns (não allowedOrigins) p/ aceitar o Vite acessado por IP da LAN, ex.: http://192.168.3.130:5173
-                .allowedOriginPatterns(frontendUrl, "http://localhost:5173", "http://192.168.*.*:5173", "http://10.*.*.*:5173")
+                // Patterns (não allowedOrigins) p/ aceitar o Vite por IP da LAN, ex.: http://192.168.3.130:5173
+                .allowedOriginPatterns(origins)
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                 .allowedHeaders("Content-Type", "Authorization", "Cookie")
                 .allowCredentials(true);

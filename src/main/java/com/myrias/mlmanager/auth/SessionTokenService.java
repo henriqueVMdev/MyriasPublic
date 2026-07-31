@@ -1,5 +1,7 @@
 package com.myrias.mlmanager.auth;
 
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Optional;
@@ -42,6 +44,15 @@ public class SessionTokenService {
                     + "(a chave default é pública — permite forjar sessão de admin).");
         }
         this.signingKey = secretKey.getBytes(StandardCharsets.UTF_8);
+    }
+
+    /** Token de sessão no request, ou null. Mora aqui junto do COOKIE_NAME. */
+    public static String readCookie(HttpServletRequest request) {
+        if (request.getCookies() == null) return null;
+        for (Cookie c : request.getCookies()) {
+            if (COOKIE_NAME.equals(c.getName())) return c.getValue();
+        }
+        return null;
     }
 
     public String make(long userId) {

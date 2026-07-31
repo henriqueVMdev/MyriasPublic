@@ -1,61 +1,8 @@
 import api from "./client";
-import type { MeliItem, ItemsResponse } from "@/types/item";
-
-export interface ItemFilters {
-  status?: string;
-  seller_sku?: string;
-  q?: string;
-  offset?: number;
-  limit?: number;
-}
-
-export async function getItems(filters: ItemFilters = {}): Promise<ItemsResponse> {
-  const params = Object.fromEntries(
-    Object.entries(filters).filter(([, v]) => v !== undefined && v !== "")
-  );
-  const { data } = await api.get<ItemsResponse>("/items", { params });
-  return data;
-}
+import type { MeliItem } from "@/types/item";
 
 export async function getItem(itemId: string): Promise<MeliItem> {
   const { data } = await api.get<MeliItem>(`/items/${itemId}`);
-  return data;
-}
-
-export interface UpdateItemResult {
-  ok: boolean;
-  ignored_attrs: string[];
-}
-
-export async function updateItem(
-  itemId: string,
-  updates: Record<string, unknown>
-): Promise<UpdateItemResult> {
-  const { data } = await api.put<UpdateItemResult>(`/items/${itemId}`, updates);
-  return data;
-}
-
-export async function updateItemStatus(
-  itemId: string,
-  status: string
-): Promise<unknown> {
-  const { data } = await api.put(`/items/${itemId}/status`, { status });
-  return data;
-}
-
-export async function updateItemDescription(
-  itemId: string,
-  plain_text: string
-): Promise<unknown> {
-  const { data } = await api.put(`/items/${itemId}/description`, { plain_text });
-  return data;
-}
-
-export async function updateItemPictures(
-  itemId: string,
-  pictures: Array<{ id?: string; source?: string }>
-): Promise<unknown> {
-  const { data } = await api.put(`/items/${itemId}/pictures`, { pictures });
   return data;
 }
 

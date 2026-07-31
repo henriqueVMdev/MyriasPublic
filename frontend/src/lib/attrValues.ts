@@ -18,7 +18,7 @@ export interface CurrentAttr {
   value_struct?: { number?: number | null; unit?: string | null } | null;
 }
 
-export function parseNumberUnit(
+function parseNumberUnit(
   raw: string | null | undefined,
   defaultUnit: string | null | undefined
 ): { number: number | null; unit: string | null } {

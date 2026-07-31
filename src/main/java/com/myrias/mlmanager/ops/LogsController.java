@@ -13,9 +13,9 @@ import org.springframework.web.bind.annotation.RestController;
  * Rotas do histórico de operações. Espelho de backend/app/api/logs.py.
  *
  * Permissões (iguais ao FastAPI):
- * - lista/operations/by-item → seção {@code logs}
+ * - operations → seção {@code logs}
  * - atendimento → seção {@code atendimento_historico}
- * - actors/stats → qualquer sessão válida (sem chave específica)
+ * - actors → qualquer sessão válida (sem chave específica)
  * A sessão do painel já é exigida pelo {@link com.myrias.mlmanager.auth.AppAuthFilter}.
  */
 @RestController
@@ -28,18 +28,6 @@ public class LogsController {
     public LogsController(OperationLogService service, PanelSecurity security) {
         this.service = service;
         this.security = security;
-    }
-
-    @GetMapping("")
-    public Map<String, Object> listLogs(
-            @RequestParam(required = false) String operation_type,
-            @RequestParam(required = false) String status,
-            @RequestParam(required = false) String item_id,
-            @RequestParam(defaultValue = "0") int offset,
-            @RequestParam(defaultValue = "50") int limit,
-            HttpServletRequest request) {
-        security.require(request, "logs");
-        return service.listLogs(operation_type, status, item_id, safeOffset(offset), safeLimit(limit));
     }
 
     @GetMapping("/actors")
@@ -78,21 +66,6 @@ public class LogsController {
             HttpServletRequest request) {
         security.require(request, "atendimento_historico");
         return service.listAtendimento(operation_type, actor, safeOffset(offset), safeLimit(limit));
-    }
-
-    @GetMapping("/by-item")
-    public Map<String, Object> byItem(
-            @RequestParam(defaultValue = "0") int offset,
-            @RequestParam(defaultValue = "50") int limit,
-            HttpServletRequest request) {
-        security.require(request, "logs");
-        return service.logsByItem(safeOffset(offset), safeLimit(limit));
-    }
-
-    @GetMapping("/stats")
-    public Map<String, Object> stats(HttpServletRequest request) {
-        security.currentUser(request); // só exige sessão válida
-        return service.stats();
     }
 
     // offset >= 0; limit em [1, 100] (mesmos limites dos Query do FastAPI).

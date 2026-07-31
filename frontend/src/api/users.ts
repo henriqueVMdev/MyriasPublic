@@ -21,13 +21,7 @@ export interface SessionInfo {
   password_required?: boolean;
   /** Deploy público de demonstração: escrita bloqueada no backend. */
   demo_mode?: boolean;
-  user: {
-    id: number;
-    username: string;
-    display_name: string | null;
-    is_admin: boolean;
-    permissions: string[];
-  } | null;
+  user: AppUser | null;
 }
 
 export interface PermissionCatalog {

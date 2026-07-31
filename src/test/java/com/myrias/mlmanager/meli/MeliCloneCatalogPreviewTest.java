@@ -62,6 +62,33 @@ class MeliCloneCatalogPreviewTest {
         }
     }
 
+    /** PACKAGE_HEIGHT e seller_package_height são a mesma medida: preencher uma
+     *  não pode fazer a outra aparecer como atributo obrigatório faltando. */
+    @Test
+    void medidaJaPreenchidaNaoContaComoObrigatorioFaltando() throws Exception {
+        StubClient client = new StubClient();
+        MeliCloneService service = new MeliCloneService(
+                client, mock(MeliAuthService.class), mock(MeliBulkService.class),
+                mock(OperationLogRepository.class),
+                mock(com.myrias.mlmanager.perf.MeliPerformanceService.class));
+
+        try {
+            var data = MAPPER.createObjectNode();
+            data.putArray("attributes")
+                    .addObject().put("id", "seller_package_height").put("value_name", "10 cm");
+
+            List<Map<String, Object>> missing =
+                    service.checkMissingRequiredAttrs(data, "MLB-CAT-DIMS");
+
+            assertTrue(missing.stream().noneMatch(m -> "PACKAGE_HEIGHT".equals(m.get("id"))),
+                    "PACKAGE_HEIGHT não devia faltar: " + missing);
+            assertTrue(missing.stream().anyMatch(m -> "PACKAGE_WIDTH".equals(m.get("id"))),
+                    "PACKAGE_WIDTH devia faltar: " + missing);
+        } finally {
+            client.close();
+        }
+    }
+
     @Test
     void informaQuandoNaoHaContaDoMercadoLivreConectada() {
         StubClient client = new StubClient();
@@ -122,6 +149,16 @@ class MeliCloneCatalogPreviewTest {
 
         @Override
         public MeliResponse getPublic(String path) {
+            if ("/categories/MLB-CAT-DIMS/attributes".equals(path)) {
+                return response(200, """
+                        [
+                          {"id":"PACKAGE_HEIGHT","name":"Altura","value_type":"number_unit",
+                           "tags":{"required":true}},
+                          {"id":"PACKAGE_WIDTH","name":"Largura","value_type":"number_unit",
+                           "tags":{"required":true}}
+                        ]
+                        """);
+            }
             if ("/categories/MLB-CAT-TEST/attributes".equals(path)) {
                 return response(200, """
                         [

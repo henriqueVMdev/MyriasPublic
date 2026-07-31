@@ -57,16 +57,6 @@ export async function getClonePreview(itemId: string): Promise<ClonePreview> {
   return data;
 }
 
-export async function createClone(
-  cloneData: Record<string, unknown>
-): Promise<Record<string, unknown>> {
-  // Timeout longo — create faz POST item + PUT SKU + POST descrição + PUT compat
-  // (item_to_copy ou fallback) + PUT update posições. Pode passar de 30s
-  // facilmente quando o ML está lento.
-  const { data } = await api.post("/clone/create", cloneData, { timeout: 180_000 });
-  return data;
-}
-
 export interface CloneMultiResult {
   total: number;
   success: number;

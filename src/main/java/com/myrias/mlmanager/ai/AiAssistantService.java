@@ -216,7 +216,11 @@ public class AiAssistantService {
                                                   String reply, List<String> events,
                                                   Map<String, Object> pendingAction) {
         tracker.success(reply, events);
-        return done(reply, events, pendingAction);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("reply", reply);
+        out.put("tool_events", events);
+        out.put("pending_action", pendingAction);
+        return out;
     }
 
     /**
@@ -299,14 +303,5 @@ public class AiAssistantService {
             case "get_operation_logs" -> "consultou o histórico de operações";
             default -> "consultou " + name;
         };
-    }
-
-    private static Map<String, Object> done(String reply, List<String> events,
-                                            Map<String, Object> pendingAction) {
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("reply", reply);
-        out.put("tool_events", events);
-        out.put("pending_action", pendingAction);
-        return out;
     }
 }

@@ -24,7 +24,6 @@ class AiModelSettingsServiceTest {
         repository = mock(AiModelSettingRepository.class);
         openRouter = mock(OpenRouterClient.class);
         service = new AiModelSettingsService(repository, openRouter);
-        when(openRouter.models()).thenReturn(List.of("modelo/a", "modelo/b"));
         when(openRouter.defaultModel()).thenReturn("modelo/a");
         when(openRouter.availableModels()).thenReturn(List.of(
                 new OpenRouterClient.ModelOption("modelo/a", "Modelo A"),

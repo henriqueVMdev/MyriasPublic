@@ -79,7 +79,7 @@ public class AppAuthFilter extends OncePerRequestFilter {
                 return;
             }
 
-            Long userId = tokens.verify(readCookie(request)).orElse(null);
+            Long userId = tokens.verify(SessionTokenService.readCookie(request)).orElse(null);
             if (userId != null) {
                 request.setAttribute(USER_ID_ATTR, userId);
                 chain.doFilter(request, response);
@@ -102,13 +102,5 @@ public class AppAuthFilter extends OncePerRequestFilter {
             // Thread vai voltar pro pool — não deixar o ator vazar pro próximo request.
             CurrentActor.clear();
         }
-    }
-
-    private String readCookie(HttpServletRequest request) {
-        if (request.getCookies() == null) return null;
-        for (var c : request.getCookies()) {
-            if (SessionTokenService.COOKIE_NAME.equals(c.getName())) return c.getValue();
-        }
-        return null;
     }
 }

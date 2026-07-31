@@ -4,9 +4,12 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 
 /**
- * Visão completa do usuário para o CRUD de admin. Espelho do UserOut (pydantic)
- * do FastAPI: mesmo shape em snake_case que o frontend (api/users.ts) consome —
- * {@code display_name}, {@code is_admin}, {@code is_active}.
+ * Visão do usuário do painel — serve tanto o CRUD de admin quanto a sessão/login.
+ * Shape em snake_case, igual ao que o frontend (api/users.ts, interface AppUser)
+ * consome: {@code display_name}, {@code is_admin}, {@code is_active}.
+ *
+ * Os @JsonProperty são obrigatórios: sem eles o Jackson mandaria camelCase e o
+ * stores/auth.ts, que lê {@code is_admin}, não detectaria o admin na sessão.
  */
 public record UserOut(
         Long id,

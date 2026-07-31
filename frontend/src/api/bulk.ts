@@ -1,28 +1,6 @@
 import api from "./client";
 import type { MeliItem } from "@/types/item";
 
-export interface SkuAccountSummary {
-  user_id: number;
-  nickname: string;
-  count: number;
-}
-
-export interface SkuGroup {
-  sku: string;
-  count: number;
-  accounts?: SkuAccountSummary[];
-  items_preview: Array<{
-    id: string;
-    title: string;
-    price: number;
-    thumbnail: string;
-    status: string;
-    listing_type_id?: string;
-    user_id?: number;
-    nickname?: string;
-  }>;
-}
-
 export interface BulkResult {
   total: number;
   success: number;
@@ -52,21 +30,6 @@ export interface AccountItemsGroup {
   error?: string;
 }
 
-export async function getSkus(): Promise<SkuGroup[]> {
-  const { data } = await api.get<SkuGroup[]>("/bulk/skus");
-  return data;
-}
-
-export async function getSkusAllAccounts(): Promise<SkuGroup[]> {
-  const { data } = await api.get<SkuGroup[]>("/bulk/skus/all");
-  return data;
-}
-
-export async function getItemsBySku(sku: string): Promise<MeliItem[]> {
-  const { data } = await api.get<MeliItem[]>(`/bulk/sku/${encodeURIComponent(sku)}`);
-  return data;
-}
-
 export async function getItemsBySkuAllAccounts(
   sku: string
 ): Promise<AccountItemsGroup[]> {
@@ -74,28 +37,6 @@ export async function getItemsBySkuAllAccounts(
     `/bulk/sku/${encodeURIComponent(sku)}/all`
   );
   return data.groups;
-}
-
-export async function bulkUpdate(
-  itemIds: string[],
-  updates: Record<string, unknown>
-): Promise<BulkResult> {
-  const { data } = await api.post<BulkResult>("/bulk/update", {
-    item_ids: itemIds,
-    updates,
-  });
-  return data;
-}
-
-export async function bulkUpdateBySku(
-  sku: string,
-  updates: Record<string, unknown>
-): Promise<BulkResult> {
-  const { data } = await api.post<BulkResult>("/bulk/update-by-sku", {
-    sku,
-    updates,
-  });
-  return data;
 }
 
 export async function bulkUpdateMulti(
@@ -140,16 +81,6 @@ export interface ItemCompatibility {
   name?: string;
   attributes?: Array<{ id: string; name: string; value_name?: string }>;
   note?: string | null;
-}
-
-export async function getCompatibilitiesFromRef(
-  ref: string
-): Promise<{ item_id: string; compatibilities: ItemCompatibility[] }> {
-  const { data } = await api.get<{
-    item_id: string;
-    compatibilities: ItemCompatibility[];
-  }>("/bulk/compatibilities/from-ref", { params: { ref } });
-  return data;
 }
 
 export interface ItemCompatibilitiesResponse {

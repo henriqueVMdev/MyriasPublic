@@ -4,17 +4,13 @@ export interface AiModelInfo {
   id: string;
   name: string;
   description: string;
-  created: number;
   contextLength: number;
   pricing: Record<string, string>;
   supportedParameters: string[];
   inputModalities: string[];
   outputModalities: string[];
   tokenizer: string;
-  instructType: string;
   maxCompletionTokens: number | null;
-  knowledgeCutoff: string;
-  defaultParameters: Record<string, unknown> | null;
   free: boolean;
   toolCompatible: boolean;
 }

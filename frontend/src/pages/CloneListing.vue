@@ -7,7 +7,9 @@ import {
   type CloneMultiResult,
   type MissingAttrDef,
 } from "@/api/clone";
-import { uploadPicture, getCategoryAttributes, type CategoryAttribute } from "@/api/items";
+import { getCategoryAttributes, type CategoryAttribute } from "@/api/items";
+import { formatMlError } from "@/lib/mlErrors";
+import { uploadPictureFiles } from "@/lib/pictureUpload";
 import { useAuthStore } from "@/stores/auth";
 import {
   Search,
@@ -613,21 +615,7 @@ async function onFileSelected(event: Event) {
   if (!files || files.length === 0) return;
   uploadingPic.value = true;
   try {
-    for (const file of Array.from(files)) {
-      const resp = await uploadPicture(file);
-      if (resp.status !== 201 && resp.status !== 200) continue;
-      const remoteId = resp.data.id;
-      const remoteUrl = resp.data.variations?.[0]?.secure_url;
-      if (!remoteId && !remoteUrl) {
-        console.warn("Upload retornou sem id nem URL — ignorando", resp.data);
-        continue;
-      }
-      editablePictures.value.push({
-        id: remoteId,
-        source: remoteUrl || undefined,
-        preview: remoteUrl || URL.createObjectURL(file),
-      });
-    }
+    editablePictures.value.push(...(await uploadPictureFiles(files)));
   } catch (err) {
     console.error("Erro ao fazer upload:", err);
   } finally {
@@ -865,16 +853,6 @@ async function publishClone(skipConfirm = false) {
 function formatPrice(price: number): string {
   return price.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
-
-function formatError(err: unknown): string {
-  if (err == null) return "";
-  if (typeof err === "string") return err;
-  try {
-    return JSON.stringify(err);
-  } catch {
-    return String(err);
-  }
-}
 </script>
 
 <template>
@@ -1010,10 +988,10 @@ function formatError(err: unknown): string {
               Ver <ExternalLink :size="12" />
             </a>
             <span v-if="!r.success" class="text-red-600 text-xs truncate">
-              {{ formatError(r.error || r.item.verification_message) }}
+              {{ formatMlError(r.error || r.item.verification_message) }}
             </span>
           </template>
-          <span v-else class="text-red-600 text-xs truncate">{{ formatError(r.error) }}</span>
+          <span v-else class="text-red-600 text-xs truncate">{{ formatMlError(r.error) }}</span>
         </div>
       </div>
     </div>

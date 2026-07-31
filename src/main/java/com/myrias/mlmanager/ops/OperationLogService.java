@@ -12,8 +12,6 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.TreeSet;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
@@ -47,35 +45,6 @@ public class OperationLogService {
 
     public OperationLogService(OperationLogRepository repo) {
         this.repo = repo;
-    }
-
-    // ---- /logs (lista simples com filtros) ----------------------------------
-
-    @Transactional(readOnly = true)
-    public Map<String, Object> listLogs(String operationType, String status, String itemId,
-                                        int offset, int limit) {
-        Specification<OperationLog> spec = byColumns(operationType, status, null, null);
-
-        // item_id filtra dentro do JSON de item_ids — feito em memória (a coluna é
-        // texto convertido, não dá pra LIKE portável no Criteria). O recorte por
-        // item costuma ser pequeno (histórico de um anúncio).
-        if (itemId != null) {
-            List<OperationLog> rows = repo.findAll(spec, Sort.by(Sort.Direction.DESC, "createdAt"));
-            List<OperationLog> filtered = new ArrayList<>();
-            for (OperationLog r : rows) {
-                if (r.getItemIds() != null && r.getItemIds().contains(itemId)) filtered.add(r);
-            }
-            int total = filtered.size();
-            List<OperationLog> page = filtered.subList(Math.min(offset, total), Math.min(offset + limit, total));
-            return Map.of("logs", page.stream().map(this::serializeListRow).toList(),
-                    "paging", paging(total, offset, limit));
-        }
-
-        long total = repo.count(spec);
-        List<OperationLog> rows = repo.findAll(spec,
-                PageRequest.of(pageOf(offset, limit), limit, Sort.by(Sort.Direction.DESC, "createdAt"))).getContent();
-        return Map.of("logs", rows.stream().map(this::serializeListRow).toList(),
-                "paging", paging((int) total, offset, limit));
     }
 
     // ---- /actors ------------------------------------------------------------
@@ -186,84 +155,6 @@ public class OperationLogService {
                 "paging", paging((int) total, offset, limit));
     }
 
-    // ---- /by-item -----------------------------------------------------------
-
-    @Transactional(readOnly = true)
-    public Map<String, Object> logsByItem(int offset, int limit) {
-        // Explode os logs por item_id em memória (equivale ao unnest do Postgres).
-        Map<String, ItemAgg> map = new LinkedHashMap<>();
-        for (OperationLog r : repo.findAll()) {
-            List<String> ids = r.getItemIds();
-            if (ids == null || ids.isEmpty()) continue;
-            for (String itemId : new LinkedHashSet<>(ids)) { // distinct por linha, como o array_agg sensato
-                ItemAgg a = map.computeIfAbsent(itemId, k -> new ItemAgg());
-                a.opCount++;
-                switch (r.getStatus() == null ? "" : r.getStatus()) {
-                    case "error" -> a.errorCount++;
-                    case "success" -> a.successCount++;
-                    case "partial" -> a.partialCount++;
-                    default -> { /* status desconhecido não entra nas contagens */ }
-                }
-                if (r.getOperationType() != null) a.opTypes.add(r.getOperationType());
-                if (r.getCreatedAt() != null && (a.lastAt == null || r.getCreatedAt().isAfter(a.lastAt))) {
-                    a.lastAt = r.getCreatedAt();
-                }
-            }
-        }
-
-        List<Map.Entry<String, ItemAgg>> entries = new ArrayList<>(map.entrySet());
-        entries.sort(Comparator.comparing((Map.Entry<String, ItemAgg> e) -> e.getValue().lastAt,
-                Comparator.nullsLast(Comparator.reverseOrder())));
-
-        int total = entries.size();
-        List<Map.Entry<String, ItemAgg>> page = entries.subList(Math.min(offset, total), Math.min(offset + limit, total));
-
-        List<Map<String, Object>> items = new ArrayList<>();
-        for (Map.Entry<String, ItemAgg> e : page) {
-            ItemAgg a = e.getValue();
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("item_id", e.getKey());
-            m.put("op_count", a.opCount);
-            m.put("last_at", iso(a.lastAt));
-            m.put("error_count", a.errorCount);
-            m.put("success_count", a.successCount);
-            m.put("partial_count", a.partialCount);
-            m.put("op_types", new ArrayList<>(a.opTypes));
-            items.add(m);
-        }
-        return Map.of("items", items, "paging", paging(total, offset, limit));
-    }
-
-    // ---- /stats -------------------------------------------------------------
-
-    @Transactional(readOnly = true)
-    public Map<String, Object> stats() {
-        Map<String, Long> byType = new LinkedHashMap<>();
-        for (Object[] row : repo.countByOperationType()) byType.put((String) row[0], (Long) row[1]);
-        Map<String, Long> byStatus = new LinkedHashMap<>();
-        for (Object[] row : repo.countByStatus()) byStatus.put((String) row[0], (Long) row[1]);
-
-        List<Map<String, Object>> recent = new ArrayList<>();
-        for (OperationLog log : repo.findTop10ByOrderByCreatedAtDesc()) {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("id", log.getId());
-            m.put("operation_type", log.getOperationType());
-            m.put("item_ids", log.getItemIds());
-            m.put("status", log.getStatus());
-            m.put("created_at", iso(log.getCreatedAt()));
-            m.put("payload", log.getPayload());
-            recent.add(m);
-        }
-
-        long total = byType.values().stream().mapToLong(Long::longValue).sum();
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("total", total);
-        out.put("by_type", byType);
-        out.put("by_status", byStatus);
-        out.put("recent", recent);
-        return out;
-    }
-
     // ---- Internos -----------------------------------------------------------
 
     /** Spec por colunas reais; {@code excludeTypes} remove tipos (ex.: atendimento). */
@@ -368,21 +259,6 @@ public class OperationLogService {
         return new ArrayList<>(ids);
     }
 
-    /** Shape enxuto da lista /logs (com response, sem batch_id/actor/user_id). */
-    private Map<String, Object> serializeListRow(OperationLog log) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("id", log.getId());
-        m.put("operation_type", log.getOperationType());
-        m.put("item_ids", log.getItemIds());
-        m.put("payload", log.getPayload());
-        m.put("response", log.getResponse());
-        m.put("status", log.getStatus());
-        m.put("error_message", log.getErrorMessage());
-        m.put("created_at", iso(log.getCreatedAt()));
-        m.put("failed_ids", failedItemIds(log.getResponse()));
-        return m;
-    }
-
     /** Parse leniente do filtro de data: "YYYY-MM-DD" ou "YYYY-MM-DDTHH:mm:ss". */
     private static LocalDateTime parseLocal(String s, boolean endOfDay) {
         if (s == null || s.isBlank()) return null;
@@ -418,11 +294,4 @@ public class OperationLogService {
     private record GroupAgg(String key, String opType, String actor, String groupStatus,
                             int total, int success, int error, int partial,
                             Instant lastAt, List<OperationLog> rows) {}
-
-    /** Acumulador mutável por item_id no /by-item. */
-    private static final class ItemAgg {
-        int opCount, errorCount, successCount, partialCount;
-        Instant lastAt;
-        final Set<String> opTypes = new TreeSet<>();
-    }
 }

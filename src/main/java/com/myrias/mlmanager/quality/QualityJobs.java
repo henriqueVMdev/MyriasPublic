@@ -3,6 +3,7 @@ package com.myrias.mlmanager.quality;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.myrias.mlmanager.meli.MeliAuthService;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -203,7 +204,7 @@ public class QualityJobs {
     }
 
     private static Set<String> issueKeys(ObjectNode audited) {
-        Set<String> keys = ConcurrentHashMap.newKeySet();
+        Set<String> keys = new HashSet<>();   // local a uma thread; não precisa ser concorrente
         if (audited != null) {
             for (var issue : audited.path("issues")) {
                 String k = issue.path("key").asText(null);

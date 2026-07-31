@@ -28,6 +28,8 @@ public class AuthController {
 
     private static final int LOGIN_MAX_ATTEMPTS = 5;
     private static final long LOGIN_WINDOW_SECONDS = 300; // 5 min
+    /** Acima disso, varre o mapa e descarta IPs cuja janela já fechou. */
+    private static final int MAX_TRACKED_IPS = 1000;
 
     private final UserAccountService users;
     private final SessionTokenService tokens;
@@ -67,7 +69,7 @@ public class AuthController {
                     .build();
             return ResponseEntity.ok()
                     .header(HttpHeaders.SET_COOKIE, cookie.toString())
-                    .body(Map.of("ok", true, "user", UserDto.of(user)));
+                    .body(Map.of("ok", true, "user", UserOut.of(user)));
         }
 
         recordFailure(ip);
@@ -81,12 +83,12 @@ public class AuthController {
         // precisa mostrar o banner e desabilitar os botões de escrita.
         Map<String, Object> out = new java.util.HashMap<>();
         out.put("demo_mode", demoMode);
-        Long userId = tokens.verify(readCookie(request)).orElse(null);
+        Long userId = tokens.verify(SessionTokenService.readCookie(request)).orElse(null);
         if (userId != null) {
             AppUser user = users.getById(userId);
             if (user != null && user.isActive()) {
                 out.put("authenticated", true);
-                out.put("user", UserDto.of(user));
+                out.put("user", UserOut.of(user));
                 return out;
             }
         }
@@ -125,14 +127,6 @@ public class AuthController {
                 .body(Map.of("ok", true));
     }
 
-    private String readCookie(HttpServletRequest request) {
-        if (request.getCookies() == null) return null;
-        for (var c : request.getCookies()) {
-            if (SessionTokenService.COOKIE_NAME.equals(c.getName())) return c.getValue();
-        }
-        return null;
-    }
-
     private static String clientIp(HttpServletRequest request) {
         String ip = request.getRemoteAddr();
         return ip == null ? "unknown" : ip;
@@ -147,6 +141,12 @@ public class AuthController {
 
     private void recordFailure(String ip) {
         long now = System.currentTimeMillis() / 1000;
+        // Sem isto o mapa só cresce: cada IP que errou a senha uma vez fica pra
+        // sempre, e a poda de dentro do compute() só toca a lista daquele IP.
+        if (loginAttempts.size() > MAX_TRACKED_IPS) {
+            loginAttempts.values().removeIf(list ->
+                    list.stream().noneMatch(t -> now - t < LOGIN_WINDOW_SECONDS));
+        }
         loginAttempts.compute(ip, (k, list) -> {
             List<Long> next = list == null ? new ArrayList<>() : new ArrayList<>(list);
             next.removeIf(t -> now - t >= LOGIN_WINDOW_SECONDS);

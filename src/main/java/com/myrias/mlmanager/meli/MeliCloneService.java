@@ -34,20 +34,13 @@ public class MeliCloneService {
     private static final String CARS_DOMAIN_ID = "MLB-CARS_AND_VANS";
     private static final int COMPAT_BATCH = 200;
     private static final Set<String> SKIP_ATTR_IDS = Set.of("SELLER_SKU", "GTIN", "MPN", "ITEM_CONDITION");
-    private static final Set<String> PACKAGE_LOWER_IDS = Set.of(
-            "seller_package_height", "seller_package_width",
-            "seller_package_length", "seller_package_weight");
-    private static final Set<String> PACKAGE_ANY_IDS = Set.of(
-            "PACKAGE_HEIGHT", "PACKAGE_WIDTH", "PACKAGE_LENGTH", "PACKAGE_WEIGHT",
-            "SELLER_PACKAGE_HEIGHT", "SELLER_PACKAGE_WIDTH",
-            "SELLER_PACKAGE_LENGTH", "SELLER_PACKAGE_WEIGHT",
-            "seller_package_height", "seller_package_width",
-            "seller_package_length", "seller_package_weight");
-    private static final Set<String> FORM_SKIP_ATTR_IDS = Set.of(
-            "PACKAGE_HEIGHT", "PACKAGE_WIDTH", "PACKAGE_LENGTH", "PACKAGE_WEIGHT",
-            "SELLER_PACKAGE_HEIGHT", "SELLER_PACKAGE_WIDTH",
-            "SELLER_PACKAGE_LENGTH", "SELLER_PACKAGE_WEIGHT", "SHIPMENT_PACKAGING");
-    private static final Map<String, String> PACKAGE_ATTR_REMAP = Map.of(
+    /**
+     * Toda grafia que o ML usa pras medidas de embalagem → a forma canônica que o
+     * POST /items aceita. Chave em MAIÚSCULA: a consulta é por {@link #canonicalPackageAttrId},
+     * que normaliza o caso — então "seller_package_height" e "PACKAGE_HEIGHT" caem aqui.
+     * Fonte única: qualquer set/switch paralelo volta a dessincronizar.
+     */
+    private static final Map<String, String> PACKAGE_ATTR_CANONICAL = Map.of(
             "PACKAGE_HEIGHT", "seller_package_height",
             "PACKAGE_WIDTH", "seller_package_width",
             "PACKAGE_LENGTH", "seller_package_length",
@@ -56,11 +49,6 @@ public class MeliCloneService {
             "SELLER_PACKAGE_WIDTH", "seller_package_width",
             "SELLER_PACKAGE_LENGTH", "seller_package_length",
             "SELLER_PACKAGE_WEIGHT", "seller_package_weight");
-    private static final Map<String, String> PACKAGE_ATTR_REMAP_INV = Map.of(
-            "seller_package_height", "PACKAGE_HEIGHT",
-            "seller_package_width", "PACKAGE_WIDTH",
-            "seller_package_length", "PACKAGE_LENGTH",
-            "seller_package_weight", "PACKAGE_WEIGHT");
     private static final Map<String, Map<String, Number>> DEFAULT_DIMS_BY_CATEGORY = Map.of(
             "MLB212730", Map.of("height", 10, "width", 20, "length", 40, "weight", 1500),
             "MLB47097", Map.of("height", 4, "width", 14, "length", 26, "weight", 200));
@@ -90,7 +78,6 @@ public class MeliCloneService {
                                 String itemStatus, JsonNode subStatus, ObjectNode item) {}
 
     private record PreviewItem(ObjectNode item, String itemId, Long ownerUserId, boolean fromCatalog) {}
-    private record PositionValue(String id, String name) {}
 
     @Transactional(readOnly = true)
     public Map<String, Object> preview(String itemIdOrUrl) {
@@ -122,7 +109,7 @@ public class MeliCloneService {
         Set<String> blockedAttrs = getBlockedAttributeIds(categoryId);
         List<JsonNode> itemAttrs = copyArray(item.path("attributes"));
         boolean catalogHasSourceAttrs = itemAttrs.stream().anyMatch(attr ->
-                hasAttrValue(attr) && !PACKAGE_ANY_IDS.contains(attr.path("id").asText("")));
+                hasAttrValue(attr) && canonicalPackageAttrId(attr.path("id").asText("")) == null);
         Map<String, Number> usedDefaultDims = injectPackageAttrs(itemAttrs, item, categoryId,
                 previewItem.fromCatalog() ? null : previewItem.ownerUserId());
         List<Map<String, Object>> copyableAttrs = filterAttributes(itemAttrs, blockedAttrs);
@@ -434,12 +421,9 @@ public class MeliCloneService {
         JsonNode attrs = data.path("attributes");
         if (attrs.isArray()) {
             for (JsonNode attr : attrs) {
-                if (hasAttrValue(attr)) {
-                    String id = attr.path("id").asText();
-                    existing.add(id);
-                    String alias = PACKAGE_ATTR_REMAP.getOrDefault(id, PACKAGE_ATTR_REMAP_INV.get(id));
-                    if (alias != null) existing.add(alias);
-                }
+                // Normalizado dos dois lados: PACKAGE_HEIGHT e seller_package_height
+                // são a mesma medida e não podem virar "atributo faltando".
+                if (hasAttrValue(attr)) existing.add(normalizeAttrId(attr.path("id").asText()));
             }
         }
 
@@ -449,7 +433,7 @@ public class MeliCloneService {
             JsonNode tags = attr.path("tags");
             if (!tags.path("required").asBoolean(false) && !tags.path("catalog_required").asBoolean(false)) continue;
             String id = attr.path("id").asText("");
-            if (id.isBlank() || existing.contains(id) || autoFillIds.contains(id)) continue;
+            if (id.isBlank() || existing.contains(normalizeAttrId(id)) || autoFillIds.contains(id)) continue;
             if (attr.hasNonNull("default_value")) continue;
             String valueType = attr.path("value_type").asText("string");
             if (attr.path("values").isArray() && !attr.path("values").isEmpty() && !"number_unit".equals(valueType)) continue;
@@ -715,10 +699,8 @@ public class MeliCloneService {
                 if (positionsObj instanceof List<?> positions) {
                     for (Object p : positions) {
                         if (!(p instanceof Map<?, ?> raw)) continue;
-                        PositionValue v = resolvePositionValue(stringObjectMap(raw));
-                        if (v != null && seen.add(v.id())) {
-                            out.add(Map.of("value_id", v.id(), "value_name", v.name()));
-                        }
+                        ItemPosition v = ItemPosition.resolve(stringObjectMap(raw));
+                        if (v != null && seen.add(v.id())) out.add(v.asValue());
                     }
                 }
             } catch (Exception e) {
@@ -726,8 +708,8 @@ public class MeliCloneService {
             }
         }
         if (out.isEmpty()) {
-            for (PositionValue v : inferPositionsFromTitle(title)) {
-                if (seen.add(v.id())) out.add(Map.of("value_id", v.id(), "value_name", v.name()));
+            for (ItemPosition v : ItemPosition.fromTitle(title)) {
+                if (seen.add(v.id())) out.add(v.asValue());
             }
         }
         return out;
@@ -785,7 +767,7 @@ public class MeliCloneService {
             for (JsonNode attr : resp.data()) {
                 String id = attr.path("id").asText("");
                 JsonNode tags = attr.path("tags");
-                if (id.isBlank() || FORM_SKIP_ATTR_IDS.contains(id)
+                if (id.isBlank() || "SHIPMENT_PACKAGING".equals(id)
                         || canonicalPackageAttrId(id) != null
                         || tags.path("read_only").asBoolean(false)
                         || tags.path("hidden").asBoolean(false)
@@ -853,7 +835,7 @@ public class MeliCloneService {
             if (resp.status() != 200 || resp.data() == null) return List.of();
             List<JsonNode> out = new ArrayList<>();
             for (JsonNode attr : resp.data().path("attributes")) {
-                if (PACKAGE_ANY_IDS.contains(attr.path("id").asText(""))) out.add(attr.deepCopy());
+                if (canonicalPackageAttrId(attr.path("id").asText("")) != null) out.add(attr.deepCopy());
             }
             return out;
         } catch (Exception e) {
@@ -903,15 +885,15 @@ public class MeliCloneService {
         return normalized;
     }
 
+    /** Forma canônica da medida de embalagem, ou null se o atributo não é medida. */
     private static String canonicalPackageAttrId(String id) {
-        if (id == null) return null;
-        return switch (id.toUpperCase(Locale.ROOT)) {
-            case "PACKAGE_HEIGHT", "SELLER_PACKAGE_HEIGHT" -> "seller_package_height";
-            case "PACKAGE_WIDTH", "SELLER_PACKAGE_WIDTH" -> "seller_package_width";
-            case "PACKAGE_LENGTH", "SELLER_PACKAGE_LENGTH" -> "seller_package_length";
-            case "PACKAGE_WEIGHT", "SELLER_PACKAGE_WEIGHT" -> "seller_package_weight";
-            default -> null;
-        };
+        return id == null ? null : PACKAGE_ATTR_CANONICAL.get(id.toUpperCase(Locale.ROOT));
+    }
+
+    /** Id comparável entre grafias: medidas viram a forma canônica, o resto passa direto. */
+    private static String normalizeAttrId(String id) {
+        String canonical = canonicalPackageAttrId(id);
+        return canonical == null ? id : canonical;
     }
 
     private static String packageAttrName(String canonicalId) {
@@ -950,13 +932,13 @@ public class MeliCloneService {
             if (!raw.isObject()) continue;
             ObjectNode attr = (ObjectNode) raw.deepCopy();
             String id = attr.path("id").asText("");
-            String remapped = PACKAGE_ATTR_REMAP.get(id);
-            if (remapped != null) {
-                id = remapped;
+            String canonical = canonicalPackageAttrId(id);
+            if (canonical != null) {
+                id = canonical;
                 attr.put("id", id);
             }
             if (!seen.add(id)) continue;
-            if (PACKAGE_LOWER_IDS.contains(id)) roundPackageAttr(attr, id);
+            if (canonical != null) roundPackageAttr(attr, id);
             out.add(attr);
         }
         data.set("attributes", out);
@@ -1181,35 +1163,6 @@ public class MeliCloneService {
         while (mlbu.find()) if (!ids.contains(mlbu.group(1))) ids.add(mlbu.group(1));
         if (ids.isEmpty() && input != null && !input.isBlank()) ids.add(input.strip());
         return ids;
-    }
-
-    private static List<PositionValue> inferPositionsFromTitle(String title) {
-        String t = title == null ? "" : title.toLowerCase(Locale.ROOT);
-        List<PositionValue> out = new ArrayList<>();
-        if (Pattern.compile("\\bdianteir[oa]s?\\b|\\bdiant\\.?\\b|\\bfrontal\\b|\\bfront\\b").matcher(t).find()) {
-            out.add(new PositionValue("13701104", "Dianteira"));
-        }
-        if (Pattern.compile("\\btraseir[oa]s?\\b|\\btras\\.?\\b|\\brear\\b").matcher(t).find()) {
-            out.add(new PositionValue("13701105", "Traseira"));
-        }
-        if (Pattern.compile("\\besquerd[oa]s?\\b|\\besq\\.?\\b|\\bl\\.?h\\.?\\b|\\bleft\\b").matcher(t).find()) {
-            out.add(new PositionValue("2262158", "Esquerda"));
-        }
-        if (Pattern.compile("\\bdireit[oa]s?\\b|\\bdir\\.?\\b|\\br\\.?h\\.?\\b|\\bright\\b").matcher(t).find()) {
-            out.add(new PositionValue("2262160", "Direita"));
-        }
-        return out;
-    }
-
-    private static PositionValue resolvePositionValue(Map<String, Object> p) {
-        String name = p.get("value_name") == null ? "" : String.valueOf(p.get("value_name"));
-        String key = name.toLowerCase(Locale.ROOT).strip();
-        String stem = key.replaceAll("[aeiou]$", "");
-        if (stem.endsWith("direit")) return new PositionValue("2262160", "Direita");
-        if (stem.endsWith("esquerd")) return new PositionValue("2262158", "Esquerda");
-        if (stem.endsWith("dianteir")) return new PositionValue("13701104", "Dianteira");
-        if (stem.endsWith("traseir")) return new PositionValue("13701105", "Traseira");
-        return null;
     }
 
     private static void sleepQuietly(long millis) {

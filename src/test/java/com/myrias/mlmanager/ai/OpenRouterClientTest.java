@@ -85,14 +85,6 @@ class OpenRouterClientTest {
     }
 
     @Test
-    void resolveModelCaiProDefaultQuandoDesconhecido() {
-        Fixture f = fixture("k");
-        assertEquals("openai/gpt-4.1", f.client().resolveModel("openai/gpt-4.1"));
-        assertEquals("anthropic/claude-sonnet-4.5", f.client().resolveModel("modelo/inexistente"));
-        assertEquals("anthropic/claude-sonnet-4.5", f.client().resolveModel(null));
-    }
-
-    @Test
     void carregaCatalogoDinamicoSomenteComModelosDeTools() {
         Fixture f = fixture("test-key");
         f.server().expect(requestTo(

@@ -21,7 +21,7 @@ export const TYPE_LABELS: Record<string, string> = {
 };
 
 // Rótulo amigável dos tipos de promoção do ML, pra exibir nos detalhes.
-export const PROMO_TYPE_LABELS: Record<string, string> = {
+const PROMO_TYPE_LABELS: Record<string, string> = {
   DEAL: "Oferta",
   LIGHTNING: "Oferta relâmpago",
   DOD: "Oferta do dia",
@@ -43,6 +43,7 @@ export const FIELD_LABELS: Record<string, string> = {
   description: "Descrição",
   status: "Status",
   keep_cover_photo: "Manter foto de capa",
+  listing_type_id: "Tipo de anúncio",
 };
 
 export function listingTypeLabel(id: string | null | undefined): string {
@@ -72,7 +73,7 @@ export function operationLabel(op: OperationGroup): string {
 }
 
 /** Detalhe da promoção (nome + tipo) a partir das sub-operações, se houver. */
-export function promotionInfo(op: OperationGroup): { name: string; type: string } | null {
+function promotionInfo(op: OperationGroup): { name: string; type: string } | null {
   for (const c of op.children) {
     if (c.operation_type !== "promotion_add" && c.operation_type !== "promotion_remove") continue;
     const p = (c.payload || {}) as Record<string, any>;
@@ -84,7 +85,7 @@ export function promotionInfo(op: OperationGroup): { name: string; type: string 
 }
 
 /** SKU(s) distintos envolvidos na operação. */
-export function operationSkus(op: OperationGroup): string[] {
+function operationSkus(op: OperationGroup): string[] {
   const skus = new Set<string>();
   for (const c of op.children) {
     const p = (c.payload || {}) as Record<string, any>;

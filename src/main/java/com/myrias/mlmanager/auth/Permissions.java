@@ -3,6 +3,8 @@ package com.myrias.mlmanager.auth;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Catálogo central de chaves de permissão (espelho de backend/app/permissions.py).
@@ -24,11 +26,9 @@ public final class Permissions {
 
     public static final List<String> METRICS = List.of("dashboard_revenue");
 
-    private static final Set<String> ALL = new LinkedHashSet<>() {{
-        addAll(SECTIONS);
-        addAll(ACTIONS);
-        addAll(METRICS);
-    }};
+    private static final Set<String> ALL = Stream.of(SECTIONS, ACTIONS, METRICS)
+            .flatMap(List::stream)
+            .collect(Collectors.toUnmodifiableSet());
 
     private Permissions() {}
 
