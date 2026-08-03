@@ -1,4 +1,4 @@
-# ML Manager
+# Myrias
 
 Painel de operação para vendedores do Mercado Livre com **múltiplas contas**: um lugar
 para acompanhar vendas, editar anúncios em massa, gerenciar promoções, responder
